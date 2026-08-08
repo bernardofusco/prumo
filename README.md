@@ -19,29 +19,36 @@ conta duas histórias afiadas em vez de um marketplace completo:
 - **Testes:** xUnit + Testcontainers (Postgres real em container) · Vitest no frontend
 - **CI:** GitHub Actions
 
-## Estrutura (alvo)
+## Estrutura
 
 ```
 prumo/
+├── global.json             # SDK band do .NET fixada (CI reproduzível)
 ├── Prumo.sln
-├── src/Prumo.Api/          # API por contexto: Busca, Agenda, Profissionais
+├── Directory.Build.props   # net10.0, Nullable, TreatWarningsAsErrors, EnforceCodeStyleInBuild
+├── .editorconfig           # fonte da verdade do `dotnet format`
+├── .gitattributes          # normaliza EOL (LF) independente do SO de quem clona
+├── src/Prumo.Api/          # Minimal API (.NET 10): GET /api/health, GET /api/health/db
 ├── tests/Prumo.Api.Tests/  # xUnit; Category=Integration usa Testcontainers
-├── frontend/               # React + TypeScript (Vite)
+├── frontend/               # React + TypeScript (Vite) + Vitest — indicador de status da API
 ├── db/migrations/          # SQL forward-only — as constraints são parte da história
-├── compose.yaml            # Postgres + pgvector para dev local
-└── .github/workflows/      # CI
+├── compose.yaml            # Postgres + pgvector (+ cube/earthdistance) para dev local
+├── .env.example            # nomes de variáveis (nunca valores reais)
+└── .github/workflows/ci.yml  # CI (espelha os gates do harness)
 ```
 
-> **Estado atual:** repositório recém-criado — o scaffold acima é a entrega do primeiro milestone
-> (M0). Este projeto é desenvolvido com o harness de agentes
+> **Estado atual:** fundação do M0 concluída — solution .NET, frontend, banco com pgvector/
+> earthdistance, testes (unitários e de integração via Testcontainers) e CI estão no ar e verdes.
+> A modelagem de domínio (profissionais, busca com ranking híbrido, agendamento) é dos próximos
+> milestones (M1/M2). Este projeto é desenvolvido com o harness de agentes
 > [`main-brain`](https://github.com/bernardofusco) (adapter `project-prumo`): specs aprovadas por
 > humano, implementação por agentes com gates de build/teste, revisão independente e QA em browser
 > real.
 
 ## Como rodar
 
-Pré-requisito: Docker (para o banco). .NET e Node só são necessários quando `src/` e `frontend/`
-tiverem código executável.
+Pré-requisitos: [Docker](https://docs.docker.com/get-docker/) (para o banco e para os testes de
+integração), .NET (SDK fixado em `global.json`) e Node (versão fixada em `frontend/.nvmrc`).
 
 ### Banco (Postgres + pgvector)
 
@@ -79,6 +86,32 @@ docker compose down -v
 ```sh
 dotnet run --project src/Prumo.Api      # API em porta fixa (ver Properties/launchSettings.json)
 npm --prefix frontend run dev           # Vite; server.proxy encaminha /api para a API (vite.config.ts)
+```
+
+Abra `http://localhost:5173`: o indicador de status parte de "verificando…" e vira "API online" (ou
+"API indisponível", se a API/banco estiverem fora) em poucos segundos.
+
+> **Build de produção / deploy cross-origin:** a API ainda não tem política de CORS configurada.
+> Enquanto frontend e API forem servidos da mesma origem (dev via proxy do Vite), não há problema —
+> mas isso precisa ser resolvido **antes** de qualquer deploy que sirva frontend e API de origens
+> diferentes (ver comentário em `.env.example`, `VITE_API_BASE_URL`). Não implementado ainda: não há
+> deploy neste milestone.
+
+### Testes e gates
+
+Comandos a partir da raiz do repo (mesmos comandos que o CI e o harness (`harness.manifest.yaml →
+gates`) executam):
+
+```sh
+dotnet format --verify-no-changes --no-restore                   # FORMAT
+dotnet build -c Debug --nologo                                   # LINT (warnings são erros)
+dotnet test --nologo -v minimal --filter "Category!=Integration" # TEST (sem Docker)
+npm --prefix frontend run lint                                   # WEB_LINT
+npm --prefix frontend run test                                   # WEB_TEST (vitest run, não-interativo)
+npm --prefix frontend run build                                  # WEB_BUILD (tsc + vite build)
+
+# Requer Docker: sobe Postgres+pgvector real via Testcontainers (mesma imagem do compose.yaml)
+dotnet test --nologo -v minimal --filter "Category=Integration"  # INTEGRATION
 ```
 
 ## Princípios
