@@ -81,6 +81,33 @@ real):
 docker compose down -v
 ```
 
+### Consulta de similaridade (inspeção manual)
+
+Depois de popular o banco (`dotnet run --project src/Prumo.Seed` — comando e providers documentados
+no fechamento do M1), a similaridade por cosseno usada pelo M1 pode ser inspecionada direto via
+`psql`, com o operador `<=>` do pgvector ordenando por distância (menor = mais próximo):
+
+```sh
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+  SELECT s.slug AS specialty_slug, p.slug AS professional_slug, p.full_name
+  FROM professionals p
+  JOIN specialties s ON s.id = p.specialty_id
+  WHERE p.embedding IS NOT NULL
+  ORDER BY p.embedding <=> (SELECT embedding FROM professionals WHERE slug = '\''ana-oliveira-bh-001'\'')
+  LIMIT 5;
+"'
+```
+
+Isso lista os 5 profissionais mais próximos, por embedding, de `ana-oliveira-bh-001` (encanadora do
+corpus de demonstração) — ela mesma aparece em primeiro lugar (distância 0). Trocar a subconsulta por
+um vetor arbitrário (`'[...]'::vector`) permite comparar contra uma descrição de teste em vez de um
+profissional já existente — é exatamente o que
+`tests/Prumo.Api.Tests/Integration/SimilaritySmokeTests.cs` faz de forma automatizada: prova, com o
+provider `hashing` (determinístico, sem rede), que o vizinho mais próximo de 3 consultas versionadas
+pertence à especialidade esperada. Esse teste mede o *pipeline* (persistência do vetor, dimensão,
+operador `<=>`, corpus real) — não a qualidade semântica de um provedor real, que é medida pelo
+golden set da MET-479.
+
 ### API e frontend
 
 ```sh
