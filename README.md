@@ -60,9 +60,12 @@ inicialização do volume**.
 dentro do container, então basta apontar o `psql` para o arquivo novo lá dentro, por exemplo:
 
 ```sh
-docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  -f /docker-entrypoint-initdb.d/0002_exemplo.sql
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/0002_exemplo.sql'
 ```
+
+(as variáveis `$POSTGRES_USER`/`$POSTGRES_DB` precisam ser expandidas **dentro** do container —
+onde o compose as injeta via `environment:` — por isso o `sh -c` envolvendo o `psql`; expandi-las
+no shell do host não funciona, pois o host não tem essas variáveis.)
 
 **Resetar o banco do zero** (descarta os dados do container local — sempre sintéticos, nunca dado
 real):
@@ -75,7 +78,7 @@ docker compose down -v
 
 ```sh
 dotnet run --project src/Prumo.Api      # API em porta fixa (ver Properties/launchSettings.json)
-npm --prefix frontend run dev           # Vite, com proxy de /api para a API
+npm --prefix frontend run dev           # Vite (proxy de /api para a API é etapa futura, ver tasks da spec)
 ```
 
 ## Princípios
