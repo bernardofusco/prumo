@@ -1,0 +1,97 @@
+name: CI
+
+# Espelha a matriz de gates do harness (harness.manifest.yaml -> gates). Se este arquivo e o
+# manifesto divergirem, o manifesto é a fonte da verdade — corrija aqui, não lá.
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: api (format, build, unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      # Gate FORMAT
+      - name: Format check
+        run: dotnet format --verify-no-changes --no-restore
+
+      # Gate BUILD (build -c Release)
+      - name: Build (Release)
+        run: dotnet build -c Release --nologo
+
+      # Gate TEST, com coleta de cobertura local ao runner (sem publicar em serviço externo).
+      # coverlet.collector já está referenciado em tests/Prumo.Api.Tests desde a T2; usamos aqui
+      # em vez de remover a dependência (decisão registrada no relatório da task).
+      - name: Unit tests
+        run: dotnet test --nologo -v minimal --filter "Category!=Integration" --collect:"XPlat Code Coverage"
+
+  web:
+    name: web (lint, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm --prefix frontend ci
+
+      # Gate WEB_LINT
+      - name: Lint
+        run: npm --prefix frontend run lint
+
+      # Gate WEB_TEST
+      - name: Test
+        run: npm --prefix frontend run test
+
+      # Gate WEB_BUILD
+      - name: Build
+        run: npm --prefix frontend run build
+
+  integration:
+    name: api (integration tests)
+    needs: api
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      # Gate INTEGRATION. O runner do GitHub Actions já tem Docker — Testcontainers sobe
+      # Postgres+pgvector diretamente, sem serviço externo nem secret.
+      - name: Integration tests
+        run: dotnet test --nologo -v minimal --filter "Category=Integration"
