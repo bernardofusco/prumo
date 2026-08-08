@@ -78,7 +78,7 @@ docker compose down -v
 
 ```sh
 dotnet run --project src/Prumo.Api      # API em porta fixa (ver Properties/launchSettings.json)
-npm --prefix frontend run dev           # Vite (proxy de /api para a API é etapa futura, ver tasks da spec)
+npm --prefix frontend run dev           # Vite; server.proxy encaminha /api para a API (vite.config.ts)
 ```
 
 ## Princípios

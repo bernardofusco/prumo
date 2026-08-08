@@ -1,13 +1,34 @@
+import { useEffect, useState } from 'react'
+
 import './App.css'
-import { StatusIndicator } from './components/StatusIndicator'
+import { fetchHealth } from './api/health'
+import { StatusIndicator, type StatusIndicatorState } from './components/StatusIndicator'
 
 function App() {
-  // Estado fixo por enquanto: o fetch real do estado de saúde da API é a task T7.
+  const [state, setState] = useState<StatusIndicatorState>('checking')
+
+  useEffect(() => {
+    let cancelled = false
+
+    const checkHealth = async () => {
+      const result = await fetchHealth()
+      if (!cancelled) {
+        setState(result)
+      }
+    }
+
+    void checkHealth()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <main>
       <h1>Prumo</h1>
       <p>
-        Estado da API: <StatusIndicator state="checking" />
+        Estado da API: <StatusIndicator state={state} />
       </p>
     </main>
   )
