@@ -1,0 +1,19 @@
+:root {
+  --text: #1f2933;
+  --bg: #ffffff;
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e5e7eb;
+    --bg: #111827;
+  }
+}
+
+body {
+  margin: 0;
+}
