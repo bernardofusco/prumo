@@ -38,6 +38,46 @@ prumo/
 > humano, implementação por agentes com gates de build/teste, revisão independente e QA em browser
 > real.
 
+## Como rodar
+
+Pré-requisito: Docker (para o banco). .NET e Node só são necessários quando `src/` e `frontend/`
+tiverem código executável.
+
+### Banco (Postgres + pgvector)
+
+```sh
+cp .env.example .env      # nomes de variáveis com defaults dev-only; nunca versione o .env
+docker compose up -d      # sobe Postgres com vector, cube e earthdistance (migration 0001)
+```
+
+O container fica `healthy` quando o `pg_isready` responde. As extensões são criadas pela
+migration `db/migrations/0001_extensions.sql`, montada (somente leitura) em
+`/docker-entrypoint-initdb.d/` — o Postgres oficial só executa esse diretório **na primeira
+inicialização do volume**.
+
+**Aplicar uma migration nova em um banco já existente** (volume já inicializado, então
+`/docker-entrypoint-initdb.d/` não roda de novo): o diretório `db/migrations/` já está montado
+dentro do container, então basta apontar o `psql` para o arquivo novo lá dentro, por exemplo:
+
+```sh
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -f /docker-entrypoint-initdb.d/0002_exemplo.sql
+```
+
+**Resetar o banco do zero** (descarta os dados do container local — sempre sintéticos, nunca dado
+real):
+
+```sh
+docker compose down -v
+```
+
+### API e frontend
+
+```sh
+dotnet run --project src/Prumo.Api      # API em porta fixa (ver Properties/launchSettings.json)
+npm --prefix frontend run dev           # Vite, com proxy de /api para a API
+```
+
 ## Princípios
 
 - **Dados 100% sintéticos** — todo profissional, cliente, endereço e telefone em seed/fixture é

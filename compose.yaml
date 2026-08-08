@@ -1,0 +1,25 @@
+# Postgres + pgvector para desenvolvimento local.
+# Uso: `cp .env.example .env` e depois `docker compose up -d` (ver README.md, seção "Como rodar").
+services:
+  db:
+    image: pgvector/pgvector:pg17-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - prumo_pgdata:/var/lib/postgresql/data
+      # Só roda na PRIMEIRA inicialização do volume (limitação do entrypoint oficial do Postgres).
+      # Migration nova em banco já existente: `psql -f db/migrations/NNNN_x.sql` (ver README.md)
+      # ou reset completo com `docker compose down -v`.
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  prumo_pgdata:
