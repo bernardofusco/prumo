@@ -40,11 +40,9 @@ jobs:
       - name: Build (Release)
         run: dotnet build -c Release --nologo
 
-      # Gate TEST, com coleta de cobertura local ao runner (sem publicar em serviço externo).
-      # coverlet.collector já está referenciado em tests/Prumo.Api.Tests desde a T2; usamos aqui
-      # em vez de remover a dependência (decisão registrada no relatório da task).
+      # Gate TEST
       - name: Unit tests
-        run: dotnet test --nologo -v minimal --filter "Category!=Integration" --collect:"XPlat Code Coverage"
+        run: dotnet test --nologo -v minimal --filter "Category!=Integration"
 
   web:
     name: web (lint, test, build)
