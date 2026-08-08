@@ -10,6 +10,18 @@
       (mesma versão já usada em tests/Prumo.Api.Tests para os testes de integração).
     -->
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!--
+      Binding pgvector para EF Core (MET-478 T3, design.md §3.2). Versões resolvidas via NuGet no
+      momento da task (não de memória) — as mais recentes publicadas em nuget.org:
+      Pgvector 0.3.2 e Pgvector.EntityFrameworkCore 0.3.0. O README oficial do pacote
+      (github.com/pgvector/pgvector-dotnet) confirma "the latest version works with Entity
+      Framework Core 9 and 10"; o nuspec de 0.3.0 declara dependência mínima em
+      Npgsql.EntityFrameworkCore.PostgreSQL >= 9.0.1, satisfeita pela 10.0.3 já usada acima.
+      Pgvector é referenciado explicitamente (e não só transitivamente) porque a entidade
+      Professional usa o tipo Pgvector.Vector diretamente.
+    -->
+    <PackageReference Include="Pgvector" Version="0.3.2" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
   </ItemGroup>
 
 </Project>
