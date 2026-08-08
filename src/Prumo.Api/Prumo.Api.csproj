@@ -2,4 +2,14 @@
 
   <!-- TargetFramework/Nullable/ImplicitUsings vêm de Directory.Build.props (fonte única). -->
 
+  <ItemGroup>
+    <!--
+      Provider EF Core para PostgreSQL (ADR-001). Versão resolvida via NuGet no momento da task
+      (não de memória): 10.0.3 é a última estável compatível com net10.0, com dependência
+      declarada em Microsoft.EntityFrameworkCore[.Relational] [10.0.4, 11.0.0) e Npgsql 10.0.3
+      (mesma versão já usada em tests/Prumo.Api.Tests para os testes de integração).
+    -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+
 </Project>
