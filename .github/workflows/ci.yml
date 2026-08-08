@@ -36,6 +36,10 @@ jobs:
       - name: Format check
         run: dotnet format --verify-no-changes --no-restore
 
+      # Gate LINT (build -c Debug, warnings-as-errors)
+      - name: Build (Debug / lint)
+        run: dotnet build -c Debug --nologo
+
       # Gate BUILD (build -c Release)
       - name: Build (Release)
         run: dotnet build -c Release --nologo
