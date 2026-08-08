@@ -23,10 +23,15 @@ public static class DatabaseHealthProbe
         using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCancellation.CancelAfter(ProbeTimeout);
 
-        var connection = dbContext.Database.GetDbConnection();
+        System.Data.Common.DbConnection? connection = null;
 
         try
         {
+            // GetDbConnection() também pode lançar (ex.: connection string malformada — o
+            // Npgsql a parseia aqui), então precisa estar dentro do try: nenhuma exceção pode
+            // escapar deste método, mesmo antes de qualquer tentativa de abrir a conexão.
+            connection = dbContext.Database.GetDbConnection();
+
             await connection.OpenAsync(timeoutCancellation.Token).ConfigureAwait(false);
 
             await using var command = connection.CreateCommand();
@@ -40,12 +45,13 @@ public static class DatabaseHealthProbe
         catch (Exception)
         {
             // Boundary de saúde: nenhuma exceção pode escapar (rede indisponível, timeout,
-            // credencial). O chamador só recebe alcançável/inalcançável — nunca a causa.
+            // credencial, connection string malformada). O chamador só recebe
+            // alcançável/inalcançável — nunca a causa.
             return false;
         }
         finally
         {
-            if (connection.State != ConnectionState.Closed)
+            if (connection is not null && connection.State != ConnectionState.Closed)
             {
                 await connection.CloseAsync().ConfigureAwait(false);
             }

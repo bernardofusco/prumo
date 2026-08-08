@@ -22,6 +22,11 @@ public sealed class HealthDbEndpointTests(PostgresIntegrationFixture fixture)
     private const string UnreachableConnectionString =
         "Host=127.0.0.1;Port=1;Database=prumo;Username=prumo_dev;Password=prumo_dev_only_change_me;Timeout=1";
 
+    // Nem sequer é uma connection string válida: o Npgsql lança ArgumentException ao parseá-la
+    // dentro de GetDbConnection(), antes de qualquer tentativa de rede. Cobre a regressão em que
+    // essa exceção escapava sem tratamento (500, corpo com stack trace) em vez de virar 503.
+    private const string MalformedConnectionString = "isto-nao-e-uma-connection-string-valida";
+
     [Fact]
     public async Task GetApiHealthDb_WhenDatabaseIsReachable_ReturnsOkWithExactContractBody()
     {
@@ -52,6 +57,20 @@ public sealed class HealthDbEndpointTests(PostgresIntegrationFixture fixture)
         // Contrato: nenhum detalhe de conexão (host, porta, usuário) vaza no corpo da resposta.
         Assert.DoesNotContain("127.0.0.1", body, StringComparison.Ordinal);
         Assert.DoesNotContain("prumo_dev", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetApiHealthDb_WhenConnectionStringIsMalformed_ReturnsServiceUnavailableWithExactContractBody()
+    {
+        using var factory = CreateFactory(MalformedConnectionString);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(new Uri("/api/health/db", UriKind.Relative));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal("""{"status":"degraded","database":"unreachable"}""", body);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string connectionString) =>
