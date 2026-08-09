@@ -1,110 +1,110 @@
 {
-  "_note": "RÉGUA DO M1 (spec MET-479, specs/features/met-479-busca-ranking-hibrido/spec.md, 'Medição do Case'). Estas 20 consultas, os resultados esperados e as métricas que as julgam (tests/Prumo.Api.Tests/Eval/EvalMetrics.cs) são o instrumento que mede se o ranking híbrido funciona. Mudar QUALQUER consulta, expectedSpecialties, expectedRankedAbove ou notes aqui DEPOIS do congelamento (fechamento da MET-479 na T12) exige ADR + decisão do dono — project/adr/README.md. Antes do congelamento (durante a T11), uma consulta só pode ser ajustada se estiver errada ou ambígua no corpus real, e o ajuste vai registrado no relatório da task que o fez — nunca removida ou reescrita só porque falhou.",
+  "_note": "RÉGUA DO M1 (spec MET-479, specs/features/met-479-busca-ranking-hibrido/spec.md, 'Medição do Case'). Estas 20 consultas, os resultados esperados e as métricas que as julgam (tests/Prumo.Api.Tests/Eval/EvalMetrics.cs) são o instrumento que mede se o ranking híbrido funciona. Mudar QUALQUER consulta, expectedSpecialties, expectedRankedAbove ou notes aqui DEPOIS do congelamento (fechamento da MET-479 na T12) exige ADR + decisão do dono — project/adr/README.md. Antes do congelamento (durante a T11), uma consulta só pode ser ajustada se estiver errada ou ambígua no corpus real, e o ajuste vai registrado no relatório da task que o fez — nunca removida ou reescrita só porque falhou. REVISÃO (T3, pós-review): consultas 'sem vocabulário' reescritas para ponte CONCEITUAL (zero palavra de conteúdo em comum com a descrição do profissional-alvo CITADA EM CADA NOTES — não necessariamente com as outras 9 descrições da mesma especialidade no corpus) em vez de paráfrase quase literal — ver notes de cada consulta e eval/README.md (seção 'Revisão da T3', que também explica o resíduo especialidade-a-especialidade medido pelo baseline lexical).",
   "queries": [
     {
       "id": "gs-01",
       "text": "vazamento no banheiro",
       "location": null,
       "expectedSpecialties": ["encanador"],
-      "notes": "A frase do case (spec 'Objetivo' item 2; DoD literal da issue, L4). Sem localização. Sem vocabulário de encanador (nem 'encanador' nem nenhum corpusSynonym). Plausível no corpus: várias descrições de encanador mencionam vazamento em pia/parede/banheiro (ex. Ana Oliveira 'ana-oliveira-bh-001' — 'emergência de vazamento embaixo da pia'; Camila Correia 'camila-correia-dcx-009' — 'a água começa a escorrer pela parede do banheiro sem explicação aparente')."
+      "notes": "A frase do case (spec 'Objetivo' item 2; DoD literal da issue, L4) — texto mantido INTACTO por exigência do DoD e da task de revisão, mesmo sob a regra de ponte conceitual (zero sobreposição de palavra) aplicada às demais consultas 'sem vocabulário': esta é a única consulta explicitamente isenta dessa regra. Sem localização. Sem vocabulário de encanador (nem 'encanador' nem nenhum corpusSynonym). Plausível no corpus: várias descrições de encanador mencionam vazamento em pia/parede/banheiro (ex. Ana Oliveira 'ana-oliveira-bh-001' — 'emergência de vazamento embaixo da pia'; Camila Correia 'camila-correia-dcx-009' — 'a água começa a escorrer pela parede do banheiro sem explicação aparente' — esta compartilha a palavra 'banheiro' com a consulta, e é exatamente por isso que a isenção do DoD precisa ficar registrada aqui: sem ela, esta consulta reprovaria a mesma régua de ponte conceitual que ela mesma exige das outras 19)."
     },
     {
       "id": "gs-02",
-      "text": "minha torneira não para de pingar a noite toda",
+      "text": "tem uma gota caindo direto desde ontem, e o balde que deixei embaixo dela já enche rápido demais",
       "location": null,
       "expectedSpecialties": ["encanador"],
-      "notes": "Sintoma, não catálogo: sem 'encanador' nem corpusSynonyms. Plausível: Marcos Araújo ('marcos-araujo-nit-008') descreve quase literalmente 'aquela torneira que fica pingando a noite inteira'."
+      "notes": "Sem vocabulário de encanador. Ponte CONCEITUAL, zero palavra de conteúdo em comum com a descrição-alvo (verificado por script sobre o texto normalizado, mesma técnica NFD/sem acento/minúscula de SeedCorpusTests): a consulta fala de uma gota caindo sem parar e um balde que enche rápido; a descrição de Marcos Araújo ('marcos-araujo-nit-008') fala de 'aquela torneira que fica pingando a noite inteira e a caixa d'água que transborda sem parar' — mesmo fenômeno (gotejamento contínuo que acumula água), vocabulário totalmente diferente (gota/caindo/balde/enche vs. torneira/pingando/noite/caixa/transborda). Reescrita da T3 (review): a versão anterior ('minha torneira não para de pingar a noite toda') reusava 'torneira'/'pingar'/'noite' quase literalmente da descrição-alvo."
     },
     {
       "id": "gs-03",
-      "text": "a luz da cozinha fica piscando toda hora, sem motivo aparente",
+      "text": "a lâmpada da sala anda tremulando toda hora, sem eu entender o porquê",
       "location": null,
       "expectedSpecialties": ["eletricista"],
-      "notes": "Sem vocabulário de eletricista. Plausível: Rodrigo Costa ('rodrigo-costa-rp-018') descreve quase literalmente 'a luz da cozinha fica piscando sem motivo'."
+      "notes": "Sem vocabulário de eletricista. Ponte conceitual, zero palavra em comum: a consulta fala de uma lâmpada que treme sem explicação; a descrição de Rodrigo Costa ('rodrigo-costa-rp-018') fala de 'a luz da cozinha fica piscando sem motivo' — mesmo sintoma (luz instável sem causa aparente), palavras diferentes (lâmpada/tremulando/porquê vs. luz/piscando/motivo). Este é o par citado pelo review da T3 como exemplo canônico de paráfrase quase literal (a consulta original repetia 'a luz da cozinha fica piscando... sem motivo' quase palavra por palavra); a reescrita corrige exatamente esse caso."
     },
     {
       "id": "gs-04",
-      "text": "minha casa ficou toda no escuro depois da tempestade e o painel não para de desarmar",
+      "text": "assim que bateu aquele temporal ontem, tudo parou de funcionar por aqui, e o quadro de força cai de novo sempre que eu tento religar alguma coisa",
       "location": null,
       "expectedSpecialties": ["eletricista"],
-      "notes": "Sem vocabulário de eletricista. Plausível: Vanessa Carvalho ('vanessa-carvalho-bh-019') descreve 'casa que fica no escuro depois de uma tempestade e painel que desarma toda vez que o forno liga'."
+      "notes": "Sem vocabulário de eletricista. Ponte conceitual, zero palavra em comum: a consulta descreve um temporal que derrubou tudo e um quadro de força que cai toda vez que se tenta religar algo; a descrição de Vanessa Carvalho ('vanessa-carvalho-bh-019') fala de 'casa que fica no escuro depois de uma tempestade e painel que desarma toda vez que o forno liga' — mesmo cenário (falha elétrica pós-tempestade com disjuntor instável), vocabulário diferente (temporal/quadro de força/cai/religar vs. tempestade/painel/desarma/forno). Reescrita da T3: a versão anterior repetia 'casa... escuro... tempestade... painel... desarma' quase literalmente."
     },
     {
       "id": "gs-05",
-      "text": "a parede da sala está descascando e cheia de mofo",
+      "text": "queria trocar aquele acabamento feio da minha sala, que está com bolhas e um cheiro de bolor que não sai",
       "location": null,
       "expectedSpecialties": ["pintor"],
-      "notes": "Sem vocabulário de pintor. Plausível: Fernando Duarte ('fernando-duarte-pet-028') descreve 'parede descascada e cheia de mofo com aparência de recém-reformada'."
+      "notes": "Sem vocabulário de pintor. Ponte conceitual, zero palavra em comum: a consulta fala de um acabamento com bolhas e cheiro de bolor (mofo); a descrição de Fernando Duarte ('fernando-duarte-pet-028') fala de 'parede descascada e cheia de mofo com aparência de recém-reformada' — mesmo problema (superfície pintada deteriorada por umidade), palavras diferentes (acabamento/bolhas/bolor vs. parede/descascada/mofo). Reescrita da T3: a versão anterior repetia 'parede... descascando... cheia... mofo' quase literalmente."
     },
     {
       "id": "gs-06",
-      "text": "meu filho rabiscou a parede toda da sala com caneta",
+      "text": "meu filho fez um desenho gigante de caneta permanente logo na entrada de casa, e preciso apagar aquilo com uma camada nova de cor",
       "location": null,
       "expectedSpecialties": ["pintor"],
-      "notes": "Sem vocabulário de pintor. Plausível: Ricardo Almeida ('ricardo-almeida-vre-030') descreve 'cubro rabisco de criança na parede da sala e devolvo o branco original'."
+      "notes": "Sem vocabulário de pintor. Ponte conceitual, zero palavra em comum: a consulta fala de um desenho de caneta permanente que precisa ser coberto com uma nova camada de cor; a descrição de Ricardo Almeida ('ricardo-almeida-vre-030') fala de 'cubro rabisco de criança na parede da sala e devolvo o branco original' — mesmo problema (marca de caneta de criança que exige repintura), palavras diferentes (desenho/apagar/camada/cor vs. rabisco/cubro/devolvo/branco). AMBIGUIDADE DECLARADA (item 2 do review): 'cobrir uma marca de caneta' também poderia soar como tarefa de limpeza (diarista) — mas caneta PERMANENTE não sai esfregando; o esperado é pintor porque a solução exige repintura da superfície, não remoção de sujeira. A consulta foi redigida especificando 'caneta permanente' e 'apagar... com uma camada nova de cor' justamente para deixar essa distinção legível, sem usar vocabulário de tinta. Reescrita da T3: a versão anterior repetia 'rabiscou/rabisco... parede... sala' quase literalmente."
     },
     {
       "id": "gs-07",
-      "text": "preciso deixar a casa impecável antes de uma visita chegar",
+      "text": "amanhã cedo chega gente que eu não vejo há tempos, e não posso deixar nem sinal de poeira à vista",
       "location": null,
       "expectedSpecialties": ["diarista"],
-      "notes": "Sem vocabulário de diarista (nem 'diarista', 'faxina' ou 'limpeza'). Plausível: Gabriel Freitas ('gabriel-freitas-ubl-038') descreve 'deixo a casa impecável do chão ao teto'."
+      "notes": "Sem vocabulário de diarista (nem 'diarista', 'faxina' ou 'limpeza'). Ponte conceitual, zero palavra em comum: a consulta fala de receber visita inesperada sem deixar sinal de poeira; a descrição de Elaine Vieira ('elaine-vieira-ctg-039') fala de 'tiro o pó acumulado e devolvo o brilho ao piso da sala e da cozinha' — mesma necessidade (limpeza completa antes de receber alguém), palavras diferentes (poeira/vista vs. pó/brilho/piso). Reescrita da T3: a versão anterior ('preciso deixar a casa impecável antes de uma visita chegar') repetia 'deixo a casa impecável' quase literalmente da descrição de Gabriel Freitas ('gabriel-freitas-ubl-038'); a nova versão mudou também o profissional-alvo citado, para reforçar a ponte por significado."
     },
     {
       "id": "gs-08",
-      "text": "o mato do quintal do condomínio está alto e ninguém corta",
+      "text": "faz tempo que ninguém mexe no verde lá fora e virou uma bagunça enorme, já não dá pra ver o chão direito",
       "location": null,
       "expectedSpecialties": ["jardineiro"],
-      "notes": "Sem vocabulário de jardineiro (nem 'poda', 'grama', 'jardim'). Plausível: Márcia Nunes ('marcia-nunes-rj-043') descreve 'área comum do condomínio sempre aparada, sem mato alto'."
+      "notes": "Sem vocabulário de jardineiro (nem 'poda', 'grama', 'jardim'). Ponte conceitual, zero palavra em comum: a consulta fala de uma área verde tomada por vegetação que ninguém corta há tempos; a descrição de Fábio Araújo ('fabio-araujo-vre-048') fala de 'aparo a grama alta do quintal... que só cresce mato há semanas' — mesmo problema (vegetação crescida precisando de corte/manutenção), palavras diferentes (verde/bagunça/chão vs. grama/mato/quintal). AMBIGUIDADE DECLARADA (item 2 do review): mato alto também aparece na descrição do dedetizador Eduardo Barbosa ('eduardo-barbosa-nit-134' — 'dedetização preventiva contra escorpião em terreno baldio e quintal com muito mato') — mas a consulta não traz nenhum indício de praga/bicho, só crescimento vegetal sem manutenção ('ninguém mexe', 'virou uma bagunça'); a leitura de manutenção de jardim é a direta, dedetização exigiria um sintoma de infestação que esta consulta não tem. Reescrita da T3: a versão anterior repetia 'mato... condomínio... alto' quase literalmente da descrição de Márcia Nunes ('marcia-nunes-rj-043'); a nova versão trocou também o profissional-alvo citado."
     },
     {
       "id": "gs-09",
-      "text": "fiquei trancado do lado de fora de casa e não consigo entrar",
+      "text": "saí rapidinho pra descartar o lixo e quando voltei não tinha mais como entrar em casa",
       "location": null,
       "expectedSpecialties": ["chaveiro"],
-      "notes": "Sem vocabulário de chaveiro. Plausível: Juliana Costa ('juliana-costa-jf-058') descreve quase literalmente 'ficou trancado do lado de fora? resolvo na hora'."
+      "notes": "Sem vocabulário de chaveiro. Ponte conceitual, zero palavra em comum: a consulta fala de sair rapidamente e não conseguir mais entrar em casa; a descrição de Maria Barbosa ('maria-barbosa-rp-054') fala de 'troco cilindro de fechadura e faço cópia rápida na hora' — mesma necessidade (destravar o acesso à própria casa), palavras diferentes (sair/descartar/entrar vs. troco/cilindro/cópia). Reescrita da T3: a versão anterior ('fiquei trancado do lado de fora de casa e não consigo entrar') repetia 'trancado do lado de fora... resolvo na hora' quase literalmente da descrição de Juliana Costa ('juliana-costa-jf-058'); a nova versão trocou também o profissional-alvo citado."
     },
     {
       "id": "gs-10",
-      "text": "falta uma estante na sala do tamanho certo pro espaço",
+      "text": "aquele canto vazio do meu quarto tem um formato torto que nenhum móvel pronto de loja encaixa direito",
       "location": null,
       "expectedSpecialties": ["marceneiro"],
-      "notes": "Sem vocabulário de marceneiro. Plausível: Larissa Duarte ('larissa-duarte-cps-068') descreve 'construo aquela estante que falta na sala, do tamanho exato'."
+      "notes": "Sem vocabulário de marceneiro. Ponte conceitual, zero palavra em comum: a consulta fala de um canto de formato irregular onde nenhum móvel de loja encaixa; a descrição de Larissa Duarte ('larissa-duarte-cps-068') fala de 'construo aquela estante que falta na sala, do jeito e do tamanho exato que o cômodo pede' — mesma necessidade (peça sob medida para um espaço que móvel pronto não resolve), palavras diferentes (canto/formato/torto/encaixa vs. estante/tamanho/jeito/exato). AMBIGUIDADE DECLARADA (item 2 do review): 'estante' aparece literalmente nas descrições dos montadores de móveis Priscila Cardoso ('priscila-cardoso-rp-072') e André Rocha ('andre-rocha-bet-077') — mas a consulta deixa explícito que NENHUM móvel pronto de loja serve, o que é justamente o que separa marcenaria sob medida (constrói do zero, encaixa em espaço irregular) de montagem (monta um produto padrão já comprado); montador-de-moveis não resolve um espaço fora do padrão. Reescrita da T3: a versão anterior repetia 'falta... estante... sala... tamanho' quase literalmente."
     },
     {
       "id": "gs-11",
-      "text": "o aparelho do quarto não gela mais e só faz barulho",
+      "text": "aquele troço do quarto vive zunindo à toa e o ambiente continua um forno mesmo com ele ligado o dia inteiro",
       "location": null,
       "expectedSpecialties": ["tecnico-ar-condicionado"],
-      "notes": "Sem vocabulário de técnico em ar-condicionado (nem 'split', 'climatiz', 'refrigera'). Plausível: Simone Araújo ('simone-araujo-gru-088') descreve quase literalmente 'aquele aparelho que só faz barulho e não gela mais'."
+      "notes": "Sem vocabulário de técnico em ar-condicionado (nem 'split', 'climatiz', 'refrigera'). Ponte conceitual, zero palavra em comum: a consulta fala de um aparelho do quarto que só faz barulho e não esfria; a descrição de Simone Araújo ('simone-araujo-gru-088') fala de 'aquele aparelho que só faz barulho e não gela mais? Resolvo com uma revisão completa' — mesmo sintoma (ruído sem refrigeração), palavras diferentes (troço/zunindo/forno vs. aparelho/barulho/gela). Reescrita da T3: a versão anterior repetia 'aparelho... não gela mais... só faz barulho' quase literalmente."
     },
     {
       "id": "gs-12",
-      "text": "quero sair do sedentarismo sem pagar academia cara",
+      "text": "queria voltar a me mexer, mas não tenho dinheiro sobrando pra pagar mensalidade de academia nem comprar aparelho nenhum",
       "location": null,
       "expectedSpecialties": ["personal-trainer"],
-      "notes": "Sem vocabulário de personal trainer (nem 'personal' nem 'treino'). Plausível: Viviane Costa ('viviane-costa-nit-098') descreve 'ajudo a sair do sedentarismo (...) sem equipamento caro nem academia lotada'."
+      "notes": "Sem vocabulário de personal trainer (nem 'personal' nem 'treino'). Ponte conceitual, zero palavra em comum: a consulta fala de querer voltar a se exercitar sem pagar mensalidade de academia nem comprar equipamento; a descrição de Adriana Pinto ('adriana-pinto-mcl-096') fala de 'monto treino funcional com peso corporal para quem não tem equipamento em casa' — mesma proposta (exercício sem depender de equipamento/estrutura cara), palavras diferentes (mexer/academia/aparelho vs. treino/funcional/equipamento). Reescrita da T3: a versão anterior repetia 'sair do sedentarismo... sem... academia... cara' quase literalmente da descrição de Viviane Costa ('viviane-costa-nit-098'); a nova versão trocou também o profissional-alvo citado."
     },
     {
       "id": "gs-13",
-      "text": "meu filho não entende a matéria de jeito nenhum",
+      "text": "meu filho trava toda vez que abre o caderno pra fazer o dever e eu não sei mais como ajudar nos estudos",
       "location": null,
       "expectedSpecialties": ["professor-particular"],
-      "notes": "Sem vocabulário de professor particular. Plausível: Juliana Fontes ('juliana-fontes-bh-109') descreve 'explico de um jeito simples aquela matéria que o aluno jura que nunca vai entender'."
+      "notes": "Sem vocabulário de professor particular. Ponte conceitual, zero palavra em comum: a consulta fala de um filho que trava toda vez que abre o caderno para fazer o dever; a descrição de Marcos Almeida ('marcos-almeida-ubl-110') fala de 'acompanho a criança nas tarefas de casa e preparo ela para a prova sem decoreba' — mesma necessidade (apoio com dificuldade escolar em casa), palavras diferentes (trava/caderno/dever/estudos vs. criança/tarefas/prova/decoreba). Reescrita da T3: a versão anterior repetia 'matéria... entende... jeito' quase literalmente da descrição de Juliana Fontes ('juliana-fontes-bh-109'); a nova versão trocou também o profissional-alvo citado."
     },
     {
       "id": "gs-14",
-      "text": "o espelho do banheiro está todo embaçado e riscado",
+      "text": "aquela divisória transparente da varanda ficou toda arranhada e embaçada, não sei se dá pra resolver só limpando",
       "location": null,
       "expectedSpecialties": ["vidraceiro"],
-      "notes": "Sem vocabulário de vidraceiro. Plausível: Fábio Almeida ('fabio-almeida-mcl-150') descreve quase literalmente 'aquele espelho do banheiro embaçado ou lascado? substituo por um novo'."
+      "notes": "Sem vocabulário de vidraceiro (nem 'vidraceiro', 'vidraçaria' ou 'vidro'). Ponte conceitual, zero palavra em comum: a consulta fala de uma divisória transparente de varanda arranhada e embaçada; a descrição de Renato Duarte ('renato-duarte-jf-148') fala de 'fecho aquela sacada que só pega vento e chuva, transformando em mais um cômodo da casa' — mesmo tipo de superfície envidraçada que exige intervenção do vidraceiro (fechamento/reparo de vidro de varanda), palavras diferentes (divisória/transparente/arranhada/embaçada vs. sacada/fecho/pega/transformando). AMBIGUIDADE DECLARADA (item 2 do review): superfície 'embaçada' também poderia soar como tarefa de limpeza (diarista Eduardo Cardoso, 'eduardo-cardoso-cps-032' — 'limpeza de vidros internos') — mas a consulta descreve dano permanente ('arranhada', e explicita 'não sei se dá pra resolver só limpando'), o que exige troca/reparo por um vidraceiro, não faxina. Reescrita da T3: a versão anterior ('o espelho do banheiro está todo embaçado e riscado') repetia 'espelho... banheiro... embaçado' quase literalmente da descrição de Fábio Almeida ('fabio-almeida-mcl-150'); a nova versão trocou também o objeto (de espelho de banheiro para vidro de varanda) e o profissional-alvo citado, para eliminar a colisão lexical inevitável em torno da palavra 'espelho'."
     },
     {
       "id": "gs-15",
       "text": "preciso de uma diarista para fazer uma faxina completa no apartamento",
       "location": null,
       "expectedSpecialties": ["diarista"],
-      "notes": "Consulta de CONTROLE, com vocabulário ('diarista', 'faxina'): garante que o caso fácil — onde busca por palavra-chave também acertaria — também está coberto pela régua, não só os casos difíceis que separam semântica de keyword. Plausível: Cristina Melo ('cristina-melo-sp-031') — 'diarista com referências, faço limpeza completa da casa'."
+      "notes": "Consulta de CONTROLE, com vocabulário ('diarista', 'faxina'): garante que o caso fácil — onde busca por palavra-chave também acertaria — também está coberto pela régua, não só os casos difíceis que separam semântica de keyword. Não é uma consulta 'sem vocabulário' (não conta para o piso de 10 do BSC-13) e por isso não está sujeita à regra de ponte conceitual do item 1 da revisão (que vale só para as consultas sem vocabulário). Plausível: Cristina Melo ('cristina-melo-sp-031') — 'diarista com referências, faço limpeza completa da casa'."
     },
     {
       "id": "gs-16",
@@ -112,36 +112,36 @@
       "location": { "latitude": -19.9475, "longitude": -43.9334, "radiusKm": 20 },
       "expectedSpecialties": ["encanador"],
       "expectedRankedAbove": [["ana-oliveira-bh-001", "maria-nunes-ctg-003"]],
-      "notes": "Com localização (centroide dos profissionais de Belo Horizonte no corpus) e com vocabulário — o par que separa híbrido de só-semântica (spec 'Medição do Case': 'a única asserção que distingue híbrido de só-semântica de forma não-negociável'). Ana Oliveira ('ana-oliveira-bh-001', Belo Horizonte, ~2,2 km do ponto de busca) e Maria Nunes ('maria-nunes-ctg-003', Contagem, ~15,1 km) são ambas encanadoras com descrições genericamente equivalentes para esta consulta (nenhuma menciona um sintoma específico que a destaque sobre a outra) — a proximidade deveria decidir a ordem. As duas distâncias respeitam o service_radius_km de cada profissional (10 km e 24 km) e o radiusKm do cliente (20 km), então ambas são candidatas válidas."
+      "notes": "Com localização (centroide dos profissionais de Belo Horizonte no corpus, ~-19,9475/-43,9334) e com vocabulário — o par que separa híbrido de só-semântica (spec 'Medição do Case': 'a única asserção que distingue híbrido de só-semântica de forma não-negociável'). Não é uma consulta 'sem vocabulário' e por isso não está sujeita à regra de ponte conceitual do item 1 da revisão. Ana Oliveira ('ana-oliveira-bh-001', Belo Horizonte, 2,22 km do ponto de busca) e Maria Nunes ('maria-nunes-ctg-003', Contagem, 15,10 km) são ambas encanadoras com descrições genericamente equivalentes para esta consulta (nenhuma menciona um sintoma específico que a destaque sobre a outra) — a proximidade deveria decidir a ordem. As duas distâncias respeitam o service_radius_km de cada profissional (10 km e 24 km) e o radiusKm do cliente (20 km), então ambas são candidatas válidas. Item 3 da revisão (diversificar as duas restrições de ordem): este é o ponto e o par de cidades ORIGINAIS (Belo Horizonte → Contagem); gs-17 foi movida para um ponto e um par de cidades diferentes (Rio de Janeiro → Niterói, raio de cliente também diferente: 15 km em vez de 20 km) para que as duas asserções de ordem não fiquem coladas ao mesmo ponto nem ao mesmo par, e não tendam a passar ou falhar juntas sob o mesmo τ de decaimento geográfico."
     },
     {
       "id": "gs-17",
       "text": "preciso de um montador de móveis de confiança na minha região",
-      "location": { "latitude": -19.9475, "longitude": -43.9334, "radiusKm": 20 },
+      "location": { "latitude": -22.8893, "longitude": -43.1734, "radiusKm": 15 },
       "expectedSpecialties": ["montador-de-moveis"],
-      "expectedRankedAbove": [["felipe-ramos-bh-073", "gustavo-souza-ctg-075"]],
-      "notes": "Segundo par de expectedRankedAbove (BSC-13 exige >= 2). Mesmo ponto de busca de gs-16 (centroide de Belo Horizonte), especialidade diferente para não repetir o mesmo par de cidades. Felipe Ramos ('felipe-ramos-bh-073', Belo Horizonte, ~0,7 km) e Gustavo Souza ('gustavo-souza-ctg-075', Contagem, ~13,7 km) são ambos montadores de móveis com descrições genéricas; a proximidade deveria decidir a ordem. Distâncias dentro do service_radius_km de cada um (22 km e 36 km) e do radiusKm do cliente (20 km)."
+      "expectedRankedAbove": [["fernando-vieira-rj-079", "debora-nogueira-nit-080"]],
+      "notes": "Com localização (centroide dos profissionais do Rio de Janeiro no corpus, ~-22,8893/-43,1734) e com vocabulário. Segundo par de expectedRankedAbove (BSC-13 exige >= 2). Não é uma consulta 'sem vocabulário' e por isso não está sujeita à regra de ponte conceitual do item 1 da revisão. Item 3 da revisão (diversificar as duas restrições de ordem): ponto e par de cidades DIFERENTES de gs-16 — Rio de Janeiro → Niterói, em vez de Belo Horizonte → Contagem; raio de cliente também diferente (15 km em vez de 20 km) — a versão anterior desta consulta usava o MESMO ponto (centroide de BH) e o MESMO par de cidades (BH → Contagem) que gs-16, o que fazia as duas asserções tenderem a passar ou falhar juntas sob o mesmo τ. Fernando Vieira ('fernando-vieira-rj-079', Rio de Janeiro, 1,39 km do ponto de busca) e Débora Nogueira ('debora-nogueira-nit-080', Niterói, 8,98 km) são ambos montadores de móveis com descrições que não destacam um sobre o outro para esta consulta genérica ('ajudo na mudança armando de novo o guarda-roupa...' vs. 'chego com ferramenta própria e transformo peças soltas em quarto de bebê...') — a proximidade deveria decidir a ordem. Distâncias dentro do service_radius_km de cada um (23 km e 30 km) e do radiusKm do cliente (15 km)."
     },
     {
       "id": "gs-18",
-      "text": "quero um visual novo pra combinar com o tom da minha pele",
-      "location": { "latitude": -22.4974, "longitude": -43.1812, "radiusKm": 25 },
+      "text": "queria sair do salão completamente diferente de como entrei, tipo um antes-e-depois de verdade",
+      "location": { "latitude": -22.4975, "longitude": -43.1836, "radiusKm": 25 },
       "expectedSpecialties": ["cabeleireiro"],
-      "notes": "Com localização (centroide de Petrópolis no corpus), sem vocabulário de cabeleireiro (nem 'cabelo', nem 'corte de cabelo'). Plausível: Diego Freitas ('diego-freitas-pet-118') descreve quase literalmente 'renovo o visual com um corte novo e um tom de cor que combina com o tom da sua pele'; ~2,2 km do ponto de busca, dentro do seu service_radius_km (50 km)."
+      "notes": "Com localização (centroide dos profissionais de Petrópolis no corpus, RECALCULADO: -22,4975/-43,1836 — item 4 da revisão: a coordenada anterior, -22,4974/-43,1812, estava a ~247 m deste centroide; corrigida para a média exata das 8 coordenadas de profissionais de Petrópolis no corpus, mesma técnica de design.md §3.5 — GroupBy City/State, Average lat/lng), sem vocabulário de cabeleireiro (nem 'cabelo', nem 'corte de cabelo'). Ponte conceitual, zero palavra em comum: a consulta fala de sair do salão completamente diferente ('antes-e-depois'); a descrição de Diego Freitas ('diego-freitas-pet-118') fala de 'renovo o visual com um corte novo e um tom de cor que combina com o tom da sua pele' — mesma ideia (transformação visual em salão), palavras diferentes (sair/salão/diferente/verdade vs. renovo/visual/corte/tom/cor/pele); ~2,48 km do ponto de busca corrigido, dentro do seu service_radius_km (50 km). Diego é o único cabeleireiro do corpus dentro do raio de Petrópolis (8 candidatos no total, 1 relevante), então o alvo não muda com a correção do centroide. Reescrita da T3: a versão anterior repetia 'combinar com o tom da minha pele' quase literalmente."
     },
     {
       "id": "gs-19",
-      "text": "quero as mãos bonitas pra um evento no fim de semana",
-      "location": { "latitude": -18.9246, "longitude": -48.2793, "radiusKm": 20 },
+      "text": "meu irmão casa no sábado e eu quero estar com tudo em ordem até a ponta dos dedos quando for cumprimentar todo mundo",
+      "location": { "latitude": -18.9246, "longitude": -48.2803, "radiusKm": 20 },
       "expectedSpecialties": ["manicure"],
-      "notes": "Com localização (centroide de Uberlândia no corpus), sem vocabulário de manicure (nem 'unha', 'esmalte', 'pedicure'). Plausível: André Araújo ('andre-araujo-ubl-128') descreve 'deixo as mãos com aparência de recém-saídas do salão, prontas para qualquer selfie ou evento'; ~0,7 km do ponto de busca, dentro do seu service_radius_km (38 km)."
+      "notes": "Com localização (centroide dos profissionais de Uberlândia no corpus, RECALCULADO: -18,9246/-48,2803 — item 4 da revisão: a coordenada anterior, -18,9246/-48,2793, estava a ~106 m deste centroide; corrigida pela mesma técnica de gs-18), sem vocabulário de manicure (nem 'unha', 'esmalte', 'cutícula', 'pedicure'). Ponte conceitual, zero palavra em comum: a consulta fala de um casamento no sábado e de estar em ordem 'até a ponta dos dedos' ao cumprimentar as pessoas; a descrição de André Araújo ('andre-araujo-ubl-128') fala de 'deixo as mãos com aparência de recém-saídas do salão, prontas para qualquer selfie ou evento' — mesma ideia (mãos arrumadas para uma ocasião social), palavras diferentes (irmão/casa/dedos/cumprimentar vs. mãos/aparência/evento/selfie); ~0,82 km do ponto de busca corrigido, dentro do seu service_radius_km (38 km). André é o único profissional de manicure do corpus dentro do raio de Uberlândia (9 candidatos no total, 1 relevante), então o alvo não muda com a correção do centroide. Reescrita da T3: a versão anterior compartilhava 'mãos' e 'evento' literalmente com a descrição-alvo. AMBIGUIDADE DECLARADA (item 3 da segunda passada do review): duas leituras concorrentes não custam pontuação, mas merecem registro. (a) 'casamento' por si só puxa para cabeleireiro — Luciana Souza ('luciana-souza-rj-115') é 'cabeleireira para noivas' — mas não há nenhum cabeleireiro do corpus dentro do raio desta busca (Uberlândia, 20 km), então essa leitura nunca teria candidato elegível aqui. (b) 'estar com tudo em ordem' por si só também puxa para diarista — Gabriel Freitas ('gabriel-freitas-ubl-038') está no raio, a 2,13 km — mas a frase completa ancora a ordem especificamente 'até a ponta dos dedos' no momento de 'cumprimentar todo mundo', o que é mão (manicure), não casa (diarista). Vale registrar que essa ponte depende do sentido LITERAL de 'até a ponta dos dedos' (mãos) em vez do idiomático corrente em pt-BR ('por completo, sem deixar nada de fora') — 'cumprimentar' já ancora a leitura em contato de mão a mão; um modelo que só captasse o idiomático teria de se apoiar nisso para não escorregar para diarista."
     },
     {
       "id": "gs-20",
-      "text": "toda madrugada aparece um bicho na minha cozinha e ele some antes de eu conseguir ver direito",
-      "location": { "latitude": -22.5395, "longitude": -44.1065, "radiusKm": 20 },
+      "text": "lá pelas tantas da noite, alguma coisa escura passa correndo perto do fogão e escapa rápido demais pra eu conseguir enxergar direito o que é",
+      "location": { "latitude": -22.5397, "longitude": -44.1046, "radiusKm": 20 },
       "expectedSpecialties": ["dedetizador"],
-      "notes": "Com localização (centroide de Volta Redonda no corpus), sem vocabulário de dedetizador (nem 'dedetização', 'praga'). Plausível: Vinícius Costa ('vinicius-costa-vre-138') descreve 'aquele problema de bicho que aparece de madrugada na cozinha e some antes de você acender a luz'; ~1,0 km do ponto de busca, dentro do seu service_radius_km (26 km)."
+      "notes": "Com localização (centroide dos profissionais de Volta Redonda no corpus, RECALCULADO: -22,5397/-44,1046 — item 4 da revisão: a coordenada anterior, -22,5395/-44,1065, estava a ~199 m deste centroide; corrigida pela mesma técnica de gs-18/gs-19), sem vocabulário de dedetizador (nem 'dedetização', 'praga'). Ponte conceitual, zero palavra em comum: a consulta fala de algo escuro que passa correndo perto do fogão de madrugada e escapa antes de dar pra ver direito; a descrição de Vinícius Costa ('vinicius-costa-vre-138') fala de 'aquele problema de bicho que aparece de madrugada na cozinha e some antes de você acender a luz' — mesmo sintoma (praga que aparece fugazmente à noite na cozinha), palavras diferentes (coisa/escura/passa/fogão/escapa vs. bicho/aparece/cozinha/some/luz). Reescrita da T3: a versão anterior era quase idêntica a esta descrição-alvo, praticamente frase por frase ('bicho... aparece... madrugada... cozinha... some... antes'); ~1,16 km do ponto de busca corrigido, dentro do seu service_radius_km (26 km). Vinícius é o único dedetizador do corpus dentro do raio de Volta Redonda (8 candidatos no total, 1 relevante), então o alvo não muda com a correção do centroide."
     }
   ]
 }
