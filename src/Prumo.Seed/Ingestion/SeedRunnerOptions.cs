@@ -22,4 +22,18 @@ public sealed record SeedRunnerOptions
     public required string ProfessionalsPath { get; init; }
 
     public int EmbeddingBatchSize { get; init; } = DefaultEmbeddingBatchSize;
+
+    /// <summary>
+    /// Resolve um valor configurado (<c>Seed:SpecialtiesPath</c>/<c>Seed:ProfessionalsPath</c>, lido
+    /// por <c>Program.cs</c>) contra o default correspondente. Achado de review da T10: uma
+    /// variável de ambiente EXPORTADA e VAZIA (ex.: <c>Seed__SpecialtiesPath=</c>, exatamente como
+    /// <c>.env.example</c> documenta o caso "sem override") chega aqui como <see cref="string.Empty"/>,
+    /// não <see langword="null"/> — o operador <c>??</c> usado antes não tratava isso e o valor vazio
+    /// seguia até <see cref="SeedCorpusReader.Load"/>, que lança <see cref="ArgumentException"/> sem
+    /// mensagem acionável nem código de saída definido (crash cru). Em branco/só espaço conta como
+    /// "não configurado" — mesma semântica de <c>string.IsNullOrWhiteSpace</c> usada no resto do
+    /// projeto (ex.: a checagem de <c>ConnectionStrings:Prumo</c> em <c>Program.cs</c>).
+    /// </summary>
+    public static string ResolvePath(string? configuredValue, string defaultValue) =>
+        string.IsNullOrWhiteSpace(configuredValue) ? defaultValue : configuredValue;
 }

@@ -82,15 +82,17 @@ public static class SeedProgram
 
         var seedOptions = new SeedRunnerOptions
         {
-            SpecialtiesPath = builder.Configuration["Seed:SpecialtiesPath"] ?? SeedRunnerOptions.DefaultSpecialtiesPath,
-            ProfessionalsPath = builder.Configuration["Seed:ProfessionalsPath"] ?? SeedRunnerOptions.DefaultProfessionalsPath,
+            SpecialtiesPath = SeedRunnerOptions.ResolvePath(
+                builder.Configuration["Seed:SpecialtiesPath"], SeedRunnerOptions.DefaultSpecialtiesPath),
+            ProfessionalsPath = SeedRunnerOptions.ResolvePath(
+                builder.Configuration["Seed:ProfessionalsPath"], SeedRunnerOptions.DefaultProfessionalsPath),
         };
 
         try
         {
             using var scope = host.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<PrumoDbContext>();
-            var embeddingProvider = scope.ServiceProvider.GetRequiredService<IEmbeddingProvider>();
+            var embeddingProvider = ResolveEmbeddingProvider(scope.ServiceProvider);
             var timeProvider = scope.ServiceProvider.GetRequiredService<TimeProvider>();
 
             var runner = new SeedRunner(dbContext, embeddingProvider, timeProvider, seedOptions);
@@ -107,6 +109,35 @@ public static class SeedProgram
             Console.Error.WriteLine(ex.Message);
 
             return SeedExitCodeMapper.Map(ex);
+        }
+    }
+
+    /// <summary>
+    /// Achado de review da T10: <c>IEmbeddingProvider</c> é registrado como singleton com FÁBRICA
+    /// preguiçosa (<c>EmbeddingProviderRegistration.AddEmbeddingProvider</c>) — só o NOME do
+    /// provider (<c>Embeddings:Provider</c>) é validado de forma síncrona no registro; os detalhes
+    /// de CADA provider (arquivo de <c>Embeddings:PrecomputedPaths</c> ausente/inválido,
+    /// <c>Embeddings:BaseUrl</c>/<c>Embeddings:Model</c> vazios no <c>openai-compatible</c>) só
+    /// aparecem AQUI, na primeira resolução — e lançam <see cref="InvalidOperationException"/> crua
+    /// (<c>EmbeddingProviderRegistration.CreatePrecomputedProvider</c>/<c>CreateOpenAiCompatibleProvider</c>,
+    /// <c>PrecomputedEmbeddingStore.Load</c>). Antes desta correção, essa resolução acontecia dentro
+    /// do <c>try</c> de <see cref="Main"/> mas o filtro do <c>catch</c> só reconhece as três exceções
+    /// tipadas da ingestão — a <see cref="InvalidOperationException"/> crua escapava sem virar
+    /// código de saída (stack trace no console, não a mensagem acionável que o README promete para o
+    /// código <see cref="SeedExitCodes.EmbeddingProviderFailure"/>). Qualquer falha aqui É, por
+    /// definição, "provedor de embeddings não utilizável" — mesma classificação (exit 3) que uma
+    /// falha durante <c>EmbedAsync</c> (<c>SeedRunner.EmbedBatchAsync</c>), então é reclassificada
+    /// como <see cref="SeedEmbeddingProviderException"/> em vez de uma segunda exceção tipada nova.
+    /// </summary>
+    private static IEmbeddingProvider ResolveEmbeddingProvider(IServiceProvider serviceProvider)
+    {
+        try
+        {
+            return serviceProvider.GetRequiredService<IEmbeddingProvider>();
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SeedEmbeddingProviderException(ex.Message, ex);
         }
     }
 }
