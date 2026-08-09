@@ -53,10 +53,15 @@ export function LocationPicker({ cities, selection, onSelectionChange }: Locatio
     }
   }, [geolocation.state])
 
-  // Permissão negada (ou geolocalização indisponível/sem suporte): spec.md J2 — "mensagem clara,
-  // sem erro técnico na tela, sem travamento, foco levado ao seletor de cidade".
+  // Permissão negada, timeout (MET-515) ou geolocalização indisponível/sem suporte: spec.md J2 —
+  // "mensagem clara, sem erro técnico na tela, sem travamento, foco levado ao seletor de cidade".
+  // O timeout é o mesmo desfecho prático dos outros dois: "não deu, escolha uma cidade".
   useEffect(() => {
-    if (geolocation.state.status === 'denied' || geolocation.state.status === 'unsupported') {
+    if (
+      geolocation.state.status === 'denied' ||
+      geolocation.state.status === 'timeout' ||
+      geolocation.state.status === 'unsupported'
+    ) {
       citySelectRef.current?.focus()
     }
   }, [geolocation.state.status])
@@ -123,6 +128,10 @@ export function LocationPicker({ cities, selection, onSelectionChange }: Locatio
 
       {geolocation.state.status === 'denied' && selection.kind !== 'city' && (
         <p role="alert">Não foi possível obter sua localização — escolha uma cidade na lista abaixo.</p>
+      )}
+
+      {geolocation.state.status === 'timeout' && selection.kind !== 'city' && (
+        <p role="alert">A localização demorou demais para responder — escolha uma cidade na lista abaixo.</p>
       )}
 
       {geolocation.state.status === 'unsupported' && selection.kind !== 'city' && (

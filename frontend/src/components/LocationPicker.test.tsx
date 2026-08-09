@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CityOption } from '../api/search'
+import { GEOLOCATION_TIMEOUT_MS } from '../hooks/useGeolocation'
 import { LocationPicker, type LocationSelection } from './LocationPicker'
 
 const CITIES: readonly CityOption[] = [
@@ -96,6 +97,85 @@ describe('LocationPicker', () => {
     const alert = screen.getByRole('alert')
     expect(alert.textContent).toBe('Não foi possível obter sua localização — escolha uma cidade na lista abaixo.')
     expect(document.activeElement).toBe(screen.getByLabelText('Cidade'))
+  })
+
+  it('MET-515: quando a promessa do navegador nunca resolve, sai de "Obtendo localização…" no timeout, com alerta claro e foco no seletor de cidade', () => {
+    vi.useFakeTimers()
+    try {
+      stubGeolocation(() => {
+        // Nunca chama success/error — reproduz o defeito real (ex.: perfil gerenciado que nega em
+        // silêncio, política do navegador). Antes do MET-515, o botão ficava preso indefinidamente.
+      })
+      render(<Harness />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Usar minha localização' }))
+      expect(
+        screen.getByRole<HTMLButtonElement>('button', { name: 'Obtendo localização…' }).disabled,
+      ).toBe(true)
+
+      act(() => {
+        vi.advanceTimersByTime(GEOLOCATION_TIMEOUT_MS)
+      })
+
+      // Saiu do estado preso: o botão volta a ficar disponível para tentar de novo.
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Usar minha localização' }).disabled).toBe(
+        false,
+      )
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe('A localização demorou demais para responder — escolha uma cidade na lista abaixo.')
+      expect(document.activeElement).toBe(screen.getByLabelText('Cidade'))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('MET-515 (revisão): um "success" tardio do navegador (depois do timeout) não desfaz a cidade que o usuário escolheu obedecendo ao alerta', () => {
+    vi.useFakeTimers()
+    try {
+      let lateSuccess: SuccessCallback | undefined
+      stubGeolocation((success) => {
+        // Guardado, não chamado "na hora" — reproduz o navegador que segura o callback e responde
+        // tarde, exatamente a premissa do MET-515 original (não hipotética: o Reviewer reproduziu
+        // isto em browser real).
+        lateSuccess = success
+      })
+      const onSelectionChange = vi.fn()
+      function CapturingHarness() {
+        const [selection, setSelection] = useState<LocationSelection>({ kind: 'none' })
+        return (
+          <LocationPicker
+            cities={CITIES}
+            selection={selection}
+            onSelectionChange={(next) => {
+              onSelectionChange(next)
+              setSelection(next)
+            }}
+          />
+        )
+      }
+      render(<CapturingHarness />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Usar minha localização' }))
+      act(() => {
+        vi.advanceTimersByTime(GEOLOCATION_TIMEOUT_MS)
+      })
+      expect(screen.getByRole('alert').textContent).toContain('demorou demais')
+
+      // Usuário obedece ao alerta e escolhe uma cidade — é a decisão que precisa sobreviver.
+      fireEvent.change(screen.getByLabelText('Cidade'), { target: { value: 'Belo Horizonte|MG' } })
+      expect(screen.getByText('Localização em uso: Belo Horizonte, MG.')).toBeDefined()
+
+      // O navegador finalmente responde, muito depois do prazo.
+      act(() => {
+        lateSuccess?.(fakePosition(-19.9245, -43.9352))
+      })
+
+      expect(screen.getByText('Localização em uso: Belo Horizonte, MG.')).toBeDefined()
+      expect(screen.getByLabelText<HTMLSelectElement>('Cidade').value).toBe('Belo Horizonte|MG')
+      expect(onSelectionChange).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'browser' }))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('sem suporte a geolocalização no navegador: alerta claro e foco no seletor de cidade, sem quebrar', () => {
