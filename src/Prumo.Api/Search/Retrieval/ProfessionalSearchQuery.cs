@@ -36,7 +36,7 @@ namespace Prumo.Api.Search.Retrieval;
 /// nunca concatenação de string, em nenhuma hipótese (Done-when da T4).
 /// </para>
 /// </summary>
-public sealed class ProfessionalSearchQuery(PrumoDbContext dbContext)
+public sealed class ProfessionalSearchQuery(PrumoDbContext dbContext) : IProfessionalSearchQuery
 {
     /// <summary>
     /// Teto do <c>CHECK professionals_radius_range</c> (<c>db/migrations/0002_specialties_and_professionals.sql</c>):

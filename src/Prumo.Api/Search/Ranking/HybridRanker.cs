@@ -36,6 +36,32 @@ public static class HybridRanker
     public static IReadOnlyList<RankedProfessional> Rank(
         IReadOnlyList<SearchCandidate> candidates, RankingOptions options, int limit)
     {
+        var ranked = BuildRankedAndSorted(candidates, options);
+
+        return Slice(ranked, limit);
+    }
+
+    /// <summary>
+    /// MET-479 T6: mesma função de <see cref="Rank"/> (corta → pontua → ordena → aplica
+    /// <paramref name="limit"/>), mas também devolve a contagem TOTAL depois do corte de
+    /// <see cref="RankingOptions.MinSemanticScore"/> e ANTES de <paramref name="limit"/>
+    /// (<see cref="RankingOutcome.TotalCandidates"/>) — o endpoint de busca precisa desse número
+    /// exato para o campo <c>totalCandidates</c> da resposta (design.md §6). Reusa o MESMO helper
+    /// interno que <see cref="Rank"/> usa (<see cref="BuildRankedAndSorted"/>): nenhuma lógica de
+    /// corte/ordenação duplicada entre os dois métodos, então os dois nunca podem divergir.
+    /// <see cref="Rank"/> continua com a assinatura e o comportamento INALTERADOS — extensão
+    /// aditiva, sem impacto nos consumidores existentes (T11/eval).
+    /// </summary>
+    public static RankingOutcome RankWithTotalCandidates(
+        IReadOnlyList<SearchCandidate> candidates, RankingOptions options, int limit)
+    {
+        var ranked = BuildRankedAndSorted(candidates, options);
+
+        return new RankingOutcome(Slice(ranked, limit), ranked.Count);
+    }
+
+    private static List<RankedProfessional> BuildRankedAndSorted(IReadOnlyList<SearchCandidate> candidates, RankingOptions options)
+    {
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(options);
 
@@ -58,8 +84,11 @@ public static class HybridRanker
 
         ranked.Sort(RankedProfessionalComparer.Instance);
 
-        return limit >= ranked.Count ? ranked : ranked.GetRange(0, Math.Max(limit, 0));
+        return ranked;
     }
+
+    private static IReadOnlyList<RankedProfessional> Slice(List<RankedProfessional> ranked, int limit) =>
+        limit >= ranked.Count ? ranked : ranked.GetRange(0, Math.Max(limit, 0));
 
     private static RankedProfessional BuildRankedProfessional(SearchCandidate candidate, double semantic, RankingOptions options)
     {

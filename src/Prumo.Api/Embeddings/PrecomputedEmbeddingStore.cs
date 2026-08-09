@@ -147,6 +147,30 @@ public sealed class PrecomputedEmbeddingStore
     }
 
     /// <summary>
+    /// Store "sempre-miss": nenhum caminho foi configurado em <c>Embeddings:PrecomputedPaths</c>
+    /// (MET-479 T6, design.md D8/§5.1). Diferente de <see cref="Load"/> — que EXIGE ao menos um
+    /// caminho e lança se a lista vier vazia, porque para a INGESTÃO (<c>Embeddings:Provider=precomputed</c>,
+    /// <c>EmbeddingProviderRegistration.CreatePrecomputedProvider</c>) uma lista vazia É erro de boot —
+    /// a BUSCA precisa subir mesmo sem nenhum artefato pré-computado configurado (é o caso hoje: o
+    /// default de <c>.env.example</c> é <c>Embeddings__Provider=hashing</c> e
+    /// <c>Embeddings__PrecomputedPaths</c> fica vazio) e responder <c>degraded</c>
+    /// (<c>Embeddings:Provider=hashing</c>) ou <c>unavailable</c> (<c>=precomputed</c>) em vez de
+    /// derrubar o processo — os dois modos existem exatamente para isso (D8 da spec).
+    ///
+    /// <para>
+    /// <b>Não afrouxa nenhuma validação existente:</b> só cobre a ausência TOTAL de caminhos
+    /// configurados. Quando ao menos um caminho ESTÁ configurado, o carregamento continua por
+    /// <see cref="Load"/> normalmente — arquivo listado e ausente, ou <c>model</c> divergente entre
+    /// arquivos, continuam erro de boot, sem exceção.
+    /// </para>
+    /// </summary>
+    public static PrecomputedEmbeddingStore Empty() =>
+        new(
+            modelId: "(nenhum artefato pré-computado configurado)",
+            vectorsBySourceHash: new Dictionary<string, float[]>(StringComparer.Ordinal),
+            entries: Array.Empty<PrecomputedEntry>());
+
+    /// <summary>
     /// Busca o vetor de <paramref name="sourceHash"/>. NUNCA lança — devolve
     /// <see langword="false"/> quando não encontrado. É o método que a MET-479 reusa diretamente
     /// para um lookup que não lança; <see cref="PrecomputedEmbeddingProvider"/> é quem decide

@@ -163,6 +163,52 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     }
 
     /// <summary>
+    /// Regressão do review da T6 (repro ao vivo com <c>dotnet run --project src/Prumo.Api</c>):
+    /// consultas curtas e plausíveis ("tv", "ar", "pc") não produzem nenhum token de
+    /// <c>&gt;= 3</c> caracteres para o <see cref="HashingEmbeddingProvider"/> bag-of-words — o
+    /// provider LANÇA <see cref="InvalidOperationException"/> (comportamento correto dele: sem isso,
+    /// silenciaria um corpus com documento vazio). <see cref="SearchQueryEmbedder"/> precisa
+    /// converter isso em <see cref="QueryEmbeddingMode.Unavailable"/>, nunca deixar a exceção subir
+    /// crua (que virou 500 com stack trace no endpoint antes desta correção). Usa o
+    /// <see cref="HashingEmbeddingProvider"/> REAL (não um fake) — é exatamente o provider que lança,
+    /// então o teste precisa ser contra ele, não contra uma simulação da simulação.
+    /// </summary>
+    [Theory]
+    [InlineData("tv")]
+    [InlineData("ar")]
+    [InlineData("pc")]
+    public async Task EmbedAsync_ReturnsUnavailable_WhenTheRealHashingProviderCannotTokenizeTheQuery(string tooShortQuery)
+    {
+        var store = LoadEmptyStore();
+        var embedder = CreateEmbedder(store, new HashingEmbeddingProvider(), EmbeddingProviderRegistration.HashingProviderName);
+
+        var result = await embedder.EmbedAsync(tooShortQuery, CancellationToken.None);
+
+        Assert.Equal(QueryEmbeddingMode.Unavailable, result.Mode);
+        Assert.Null(result.Vector);
+        Assert.Null(result.ModelId);
+    }
+
+    /// <summary>Mesma correção, isolada: um <see cref="FakeEmbeddingProvider"/> reproduz a falha sem depender do tokenizador real.</summary>
+    [Fact]
+    public async Task EmbedAsync_ReturnsUnavailable_WhenTheHashingProviderThrowsBecauseTheDocumentHasNoUsableTokens()
+    {
+        var store = LoadEmptyStore();
+        var provider = new FakeEmbeddingProvider(
+            "hashing:v1@768",
+            exceptionToThrow: new InvalidOperationException(
+                "Documento não produziu nenhum token de >= 3 caracteres após normalização."));
+
+        var embedder = CreateEmbedder(store, provider, EmbeddingProviderRegistration.HashingProviderName);
+
+        var result = await embedder.EmbedAsync("tv", CancellationToken.None);
+
+        Assert.Equal(QueryEmbeddingMode.Unavailable, result.Mode);
+        Assert.Null(result.Vector);
+        Assert.Null(result.ModelId);
+    }
+
+    /// <summary>
     /// O caso que faria a demo pública mentir se a checagem sumisse:
     /// <see cref="PrecomputedEmbeddingProvider"/> (o <see cref="IEmbeddingProvider"/> que o DI liga a
     /// <c>Embeddings:Provider=precomputed</c>) LANÇA para documento ausente — comportamento correto

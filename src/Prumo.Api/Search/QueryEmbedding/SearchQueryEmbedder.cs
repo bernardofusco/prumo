@@ -83,7 +83,8 @@ public sealed class SearchQueryEmbedder : ISearchQueryEmbedder
                 await EmbedWithLocalDeterministicProviderAsync(document, cancellationToken).ConfigureAwait(false),
 
             EmbeddingProviderRegistration.PrecomputedProviderName =>
-                new QueryEmbeddingResult(Vector: null, QueryEmbeddingMode.Unavailable, ModelId: null),
+                new QueryEmbeddingResult(
+                    Vector: null, QueryEmbeddingMode.Unavailable, ModelId: null, QueryEmbeddingUnavailableReason.NoPrecomputedVector),
 
             // Inalcançável em prática: EmbeddingProviderRegistration.AddEmbeddingProvider já validou
             // Embeddings:Provider no boot, antes de este tipo sequer ser construído. Mantido só como
@@ -139,12 +140,42 @@ public sealed class SearchQueryEmbedder : ISearchQueryEmbedder
     /// <c>Embeddings:Provider=hashing</c>, consulta ausente do artefato: usa o provider bag-of-words
     /// determinístico local (design.md §5.2). NÃO é busca semântica — <see cref="QueryEmbeddingMode.Degraded"/>
     /// sinaliza isso para o endpoint (T6) marcar a resposta e a UI avisar (R8 do design).
-    /// <see cref="HashingEmbeddingProvider"/> não faz rede nem I/O, então não há falha externa para
-    /// embrulhar aqui.
+    ///
+    /// <para>
+    /// <b>Correção pós-review da T6:</b> <see cref="HashingEmbeddingProvider"/> não faz rede nem I/O,
+    /// mas LANÇA <see cref="InvalidOperationException"/> quando o documento não produz nenhum token de
+    /// <c>&gt;= 3</c> caracteres (ver XML-doc de <c>HashingEmbeddingProvider.EmbedOne</c>) — consultas
+    /// plausíveis e curtas ("tv", "ar", "pc", "???") caem exatamente nesse caso. Sem este
+    /// <c>catch</c>, a exceção subia crua até o endpoint e virava 500 com stack trace — fora do
+    /// contrato da spec (só 400/422/502, nunca detalhe de implementação no corpo). Nenhum caminho de
+    /// embedding produziu vetor para esta consulta ⇒ mesma semântica de
+    /// <see cref="QueryEmbeddingMode.Unavailable"/> (o endpoint já sabe transformar isso em 422 com as
+    /// consultas de demonstração).
+    /// </para>
     /// </summary>
     private async Task<QueryEmbeddingResult> EmbedWithLocalDeterministicProviderAsync(string document, CancellationToken cancellationToken)
     {
-        var vectors = await _provider.EmbedAsync([document], cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<float[]> vectors;
+        try
+        {
+            vectors = await _provider.EmbedAsync([document], cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // O bag-of-words não consegue construir (nem L2-normalizar) um vetor para um texto sem
+            // nenhum token de >= 3 caracteres — comportamento CORRETO do provider (documento vazio na
+            // ingestão é bug do corpus), mas uma consulta de busca curta e plausível não é bug de
+            // ninguém: é o texto que um usuário de verdade digita. Nenhum vetor foi produzido; a
+            // cadeia D8 não tem mais nenhum caminho a tentar quando Embeddings:Provider=hashing.
+            //
+            // Nota para a T12 (registrada no review, não corrigida agora): este catch aceita QUALQUER
+            // InvalidOperationException do provider — hoje o único emissor é o "magnitude == 0" do
+            // hashing, mas um defeito futuro de configuração que se manifeste com o mesmo tipo de
+            // exceção viraria 422 silencioso, indistinguível de "consulta curta". Um LogWarning aqui
+            // seria seguro (a mensagem do provider é genérica, nunca contém o documento).
+            return new QueryEmbeddingResult(
+                Vector: null, QueryEmbeddingMode.Unavailable, ModelId: null, QueryEmbeddingUnavailableReason.NoUsableTokensForHashing);
+        }
 
         return new QueryEmbeddingResult(new Vector(vectors[0]), QueryEmbeddingMode.Degraded, _provider.ModelId);
     }
