@@ -1,6 +1,269 @@
+/* Estende o App.css do M0 (design.md §7: "CSS simples estendendo o do M0 (coluna única, unidades
+   relativas)"). Sem framework, sem biblioteca de componentes — HTML semântico com pouco CSS
+   (estética ui-minimalist). Cores herdam as variáveis --text/--bg de index.css (claro/escuro). */
+
 main {
-  max-width: 640px;
+  /* Sobe de 640px (M0) para caber o card de resultado sem apertar a decomposição do score —
+     mudança declarada por design.md §7. Em rem (16px base), não px: unidade relativa. */
+  max-width: 44rem;
   margin: 0 auto;
-  padding: 48px 24px;
+  padding: 3rem 1.5rem;
+}
+
+main > h1,
+main > .lede {
   text-align: center;
+}
+
+main > .lede {
+  margin-top: 0.25rem;
+  opacity: 0.8;
+}
+
+/* ---- Foco visível (core/skills/web-design-guidelines: nunca outline-none sem substituto) ---- */
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+/* ---- Formulário de busca --------------------------------------------------------------------- */
+
+.search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.search-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.search-form__field label {
+  font-weight: 600;
+}
+
+.search-form__field input {
+  font: inherit;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+}
+
+.search-form__error {
+  margin: 0;
+  color: var(--notice-error-text, #b3261e);
+}
+
+.search-form > button[type='submit'] {
+  align-self: flex-start;
+}
+
+/* ---- Botões (compartilhado por todo o formulário) -------------------------------------------- */
+
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+select {
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* ---- LocationPicker ---------------------------------------------------------------------------- */
+
+.location-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.375rem;
+}
+
+.location-picker__label {
+  font-weight: 600;
+}
+
+.location-picker__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.location-picker__controls label {
+  font-weight: 600;
+}
+
+.location-picker__status {
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* ---- ExampleQueries ------------------------------------------------------------------------- */
+
+.example-queries {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.example-queries ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.example-queries button {
+  border-radius: 999px;
+  padding: 0.375rem 0.875rem;
+}
+
+/* ---- Notice (sem localização | degradado | indisponível | erro) ------------------------------ */
+
+.notice {
+  padding: 0.875rem 1rem;
+  border-left: 0.25rem solid currentColor;
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.notice p:first-child {
+  margin-top: 0;
+}
+
+.notice p:last-child {
+  margin-bottom: 0;
+}
+
+.notice--warning {
+  color: var(--notice-warning-text, #7a5900);
+}
+
+.notice--error {
+  color: var(--notice-error-text, #b3261e);
+}
+
+@media (prefers-color-scheme: dark) {
+  .notice--warning {
+    color: var(--notice-warning-text, #e8c468);
+  }
+
+  .notice--error {
+    color: var(--notice-error-text, #f2b8b5);
+  }
+}
+
+/* ---- Resultados ------------------------------------------------------------------------------- */
+
+.result-list {
+  /* A região agora é persistente (montada desde `idle`, ver App.tsx) — sem `:not(:empty)` ela
+     ocuparia `margin-top` mesmo vazia, antes da primeira busca. */
+  text-align: left;
+}
+
+.result-list:not(:empty) {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.result-list__summary {
+  margin: 0;
+  opacity: 0.8;
+}
+
+.result-list__empty {
+  margin: 0;
+}
+
+.result-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result-card {
+  padding: 1rem 1.25rem;
+  border: 1px solid currentColor;
+  border-radius: 0.375rem;
+}
+
+.result-card__name {
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
+}
+
+.result-card__meta {
+  margin: 0 0 0.5rem;
+  opacity: 0.8;
+}
+
+.result-card__description {
+  margin: 0 0 0.75rem;
+}
+
+.result-card__score {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-card__score-row {
+  display: contents;
+}
+
+.result-card__score dt {
+  font-weight: 600;
+}
+
+.result-card__score dd {
+  margin: 0;
+}
+
+/* ---- Rodapé (StatusIndicator do M0) ------------------------------------------------------------ */
+
+footer {
+  margin-top: 3rem;
+  text-align: center;
+  opacity: 0.7;
 }

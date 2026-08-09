@@ -39,17 +39,22 @@ prumo/
 └── .github/workflows/ci.yml  # CI (espelha os gates do harness)
 ```
 
-> **Estado atual:** fundação do M0 concluída, e o M1 (MET-478 — modelagem e ingestão) entregou o
-> schema de domínio (`specialties`, `professionals`, coluna vetorial `embedding vector(768)` com
-> procedência auditável), o corpus sintético (~150 profissionais) e o comando de ingestão idempotente
-> (`src/Prumo.Seed`). A **busca com ranking híbrido medido contra o golden set** (MET-479) — a parte
-> que expõe endpoint HTTP e UI de busca — ainda não existe; o agendamento sob concorrência é o M2. A
-> escolha do provedor de embeddings real (API paga vs. modelo local) está registrada na ADR-002 do
-> harness de agentes e é decisão pendente do dono — enquanto isso, tudo neste repo roda com o
-> provider `hashing` (determinístico, sem rede, sem chave). Este projeto é
-> desenvolvido com o harness de agentes [`main-brain`](https://github.com/bernardofusco) (adapter
-> `project-prumo`): specs aprovadas por humano, implementação por agentes com gates de build/teste,
-> revisão independente e QA em browser real.
+> **Estado atual:** fundação do M0 concluída; o M1 entregou modelagem e ingestão (MET-478) — schema
+> de domínio (`specialties`, `professionals`, coluna vetorial `embedding vector(768)` com procedência
+> auditável), corpus sintético (~150 profissionais) e comando de ingestão idempotente
+> (`src/Prumo.Seed`) — e a **busca com ranking híbrido** (MET-479): endpoint `GET /api/search` +
+> `GET /api/search/options`, a função pura de ranking (`Search/Ranking/HybridRanker`), a recuperação
+> de candidatos via `<=>`/`earthdistance` e a tela em React estão implementados e testados (ver seção
+> "Busca", abaixo). O que falta é a **medição contra o golden set** (BSC-15..18) e a **ratificação dos
+> pesos** (BSC-20/21, ADR-003) — as duas dependem da mesma decisão pendente do dono sobre o provedor
+> real de embeddings (ADR-002, `Proposed`); sem ela não existe vetor semântico real neste repo, e o
+> eval do golden set (`eval/golden-set.json`, pronto desde a T3) não pode rodar de verdade. Até lá,
+> tudo neste repo roda com o provider `hashing` (determinístico, sem rede, sem chave) — inclusive a
+> busca, em `embedding.mode: "degraded"`, sinalizado na resposta e na tela. O agendamento sob
+> concorrência é o M2. Este projeto é desenvolvido com o harness de agentes
+> [`main-brain`](https://github.com/bernardofusco) (adapter `project-prumo`): specs aprovadas por
+> humano, implementação por agentes com gates de build/teste, revisão independente e QA em browser
+> real.
 
 ## Como rodar
 
@@ -199,6 +204,73 @@ Abra `http://localhost:5173`: o indicador de status parte de "verificando…" e 
 > mas isso precisa ser resolvido **antes** de qualquer deploy que sirva frontend e API de origens
 > diferentes (ver comentário em `.env.example`, `VITE_API_BASE_URL`). Não implementado ainda: não há
 > deploy neste milestone.
+
+### Busca (MET-479 — ranking híbrido)
+
+Com o banco populado (seção "Seed", acima) e a API + frontend no ar (seção anterior), a busca já
+funciona de ponta a ponta: abra `http://localhost:5173`, digite uma descrição do serviço que precisa
+(ou clique numa das consultas de demonstração) e submeta (Enter ou o botão — a busca nunca dispara a
+cada tecla). Resumindo o fluxo completo do zero:
+
+```sh
+cp .env.example .env && docker compose up -d                       # banco
+export ConnectionStrings__Prumo="Host=localhost;Port=5432;Database=prumo;Username=prumo_dev;Password=prumo_dev_only_change_me"
+export Embeddings__Provider=hashing
+dotnet run --project src/Prumo.Seed                                 # seed
+dotnet run --project src/Prumo.Api                                  # API em http://localhost:5096
+npm --prefix frontend run dev                                       # frontend em http://localhost:5173
+```
+
+Cada resultado mostra nome, especialidade, cidade, **distância** (quando há localização) e o
+**score**, com a decomposição já calculada pela API (relevância × peso + proximidade × peso) — o
+React só formata e desenha; nenhuma aritmética de ranking acontece no frontend.
+
+#### Os três estados de localização
+
+- **"Usar minha localização"** — pede a posição ao navegador (`navigator.geolocation`); a coordenada
+  é arredondada a 3 casas decimais (~110 m) **antes** de sair do browser (minimização de dado — não
+  muda o ranking). Se a permissão for negada (ou o navegador não suportar), a tela mostra uma
+  mensagem clara e leva o foco ao seletor de cidade, sem erro técnico nem travamento.
+- **Cidade manual** — um `<select>` com as cidades do corpus (centroide calculado a partir dos
+  próprios profissionais, sem geocodificador externo), vindo de `GET /api/search/options`.
+- **Sem localização** — o padrão. A busca ordena só por relevância semântica; a lista de resultados
+  não mostra distância, e um aviso permanente (não-dispensável) avisa que a proximidade não está
+  sendo considerada.
+
+Em qualquer um dos três estados, um profissional só aparece se **ele** atende aquele ponto
+(`service_radius_km`) — o raio pedido pelo cliente (`radiusKm`) é parâmetro de API opcional, sem
+controle correspondente na tela v1 (D5/P4 da spec).
+
+#### Sem provedor de embeddings configurado (D8)
+
+A demo pública roda **sem chave nenhuma**. O comportamento de `GET /api/search` depende só de
+`Embeddings:Provider` (a mesma variável da ingestão, seção "Seed"):
+
+| `Embeddings:Provider` | Consulta com vetor pré-computado | Consulta sem vetor pré-computado |
+|---|---|---|
+| `precomputed` | responde normalmente, `embedding.mode: "precomputed"` | **HTTP 422** `embedding_unavailable`, com a lista de consultas de demonstração no corpo |
+| `openai-compatible` | usa o artefato pré-computado (grátis, determinístico), `embedding.mode: "precomputed"` | chama o provedor configurado, `embedding.mode: "provider"` |
+| `hashing` | — (o modo degradado não olha o artefato) | usa o provider local determinístico, `embedding.mode: "degraded"`, com aviso visível na tela |
+
+Hoje, sem `db/seed/embeddings/<modelo>.json` nem `eval/embeddings/<modelo>.json` neste repo (a
+decisão do provedor real — ADR-002 — ainda está pendente do dono), `Embeddings__PrecomputedPaths`
+fica vazio e o default de `Embeddings:Provider` para a API é `hashing`: **toda** busca roda em modo
+degradado. É bag-of-words determinístico — não é a busca semântica que o case demonstra, e a tela diz
+isso com todas as letras (nunca passa por semântica de verdade silenciosamente). Depois que os dois
+artefatos existirem, aponte `Embeddings__PrecomputedPaths__0`/`__1` para eles (ver `.env.example`) e
+as consultas de demonstração — que são exatamente as do golden set — passam a responder em
+`mode: "precomputed"`, sem chave nenhuma.
+
+#### A medição (o golden set)
+
+O ranking é medido contra `eval/golden-set.json` — 20 consultas em linguagem de cliente, com
+resultado esperado, versionadas no repo. O que a régua mede, os limiares, o grid de calibração e a
+composição verificada por teste estão documentados em **[`eval/README.md`](eval/README.md)**; a
+tabela de resultados (só-semântica vs. híbrido, os 18 pontos do grid, os pesos escolhidos) fica **em
+branco até a medição rodar de verdade** — que depende do mesmo provedor pendente citado acima. Sem
+vetor semântico real, o teste do golden set contra Postgres (`Category=Integration`,
+`GoldenSetEvalTests`) não existe ainda neste repo: a régua está pronta (consultas, métricas,
+conformidade), mas não há número medido para publicar aqui até essa decisão chegar.
 
 ### Testes e gates
 

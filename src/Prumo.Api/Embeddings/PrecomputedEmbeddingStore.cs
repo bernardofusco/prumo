@@ -18,7 +18,17 @@ namespace Prumo.Api.Embeddings;
 ///
 /// **Contrato compartilhado com a MET-479 (não renomear sem coordenar as duas specs):** o nome da
 /// chave de configuração (<c>Embeddings:PrecomputedPaths</c>, lista) e o formato de arquivo
-/// (<c>model</c>, <c>dimensions</c>, <c>hashAlgorithm</c>, <c>vectors[].slug/sourceHash/embedding</c>).
+/// (<c>model</c>, <c>dimensions</c>, <c>hashAlgorithm</c>, <c>vectors[].slug/sourceHash/embedding</c>,
+/// mais os campos opcionais <c>id</c>/<c>text</c> que o artefato de CONSULTAS do golden set — T10 da
+/// MET-479 — acrescenta para alimentar as consultas de demonstração).
+///
+/// <para>
+/// <b>Extensão aditiva da MET-479/T5</b> sobre o que a MET-478/T6 entregou: <see cref="Entries"/> e
+/// <see cref="Dimensions"/> são NOVOS membros só-leitura; nenhum membro existente (<see cref="ModelId"/>,
+/// <see cref="VectorCount"/>, <see cref="TryGetVector"/>, <see cref="Load"/>) mudou de assinatura,
+/// comportamento ou mensagem de erro — os testes da MET-478 (<c>PrecomputedEmbeddingStoreTests</c>,
+/// <c>PrecomputedEmbeddingProviderTests</c>) continuam verdes sem alteração.
+/// </para>
 /// </summary>
 public sealed class PrecomputedEmbeddingStore
 {
@@ -29,10 +39,14 @@ public sealed class PrecomputedEmbeddingStore
 
     private readonly IReadOnlyDictionary<string, float[]> _vectorsBySourceHash;
 
-    private PrecomputedEmbeddingStore(string modelId, IReadOnlyDictionary<string, float[]> vectorsBySourceHash)
+    private PrecomputedEmbeddingStore(
+        string modelId,
+        IReadOnlyDictionary<string, float[]> vectorsBySourceHash,
+        IReadOnlyList<PrecomputedEntry> entries)
     {
         ModelId = modelId;
         _vectorsBySourceHash = vectorsBySourceHash;
+        Entries = entries;
     }
 
     /// <summary>
@@ -42,8 +56,28 @@ public sealed class PrecomputedEmbeddingStore
     /// </summary>
     public string ModelId { get; }
 
+    /// <summary>
+    /// Dimensão canônica dos vetores carregados. Sempre igual a <see cref="EmbeddingDefaults.Dimensions"/>
+    /// — <see cref="Load"/> já rejeita, na carga, qualquer artefato ou vetor individual que declare
+    /// dimensão diferente (<see cref="EmbeddingDefaults.ValidateDimensions"/>), então este valor nunca
+    /// diverge do que foi de fato indexado. Exposto para quem consome o store (MET-479, design.md §5.1)
+    /// não precisar depender da constante estática diretamente.
+    /// </summary>
+    public int Dimensions => EmbeddingDefaults.Dimensions;
+
     /// <summary>Quantidade de vetores indexados, somando todos os arquivos carregados.</summary>
     public int VectorCount => _vectorsBySourceHash.Count;
+
+    /// <summary>
+    /// Todas as entradas carregadas, na ORDEM dos arquivos em <see cref="Load"/> e, dentro de cada
+    /// arquivo, na ordem em que aparecem em <c>vectors[]</c> (design.md §5.1: "ordem do arquivo;
+    /// alimenta exampleQueries"). O artefato de CORPUS normalmente só preenche <c>Slug</c>; o
+    /// artefato de CONSULTAS do golden set (T10) preenche <c>Id</c>/<c>Text</c> — é filtrando por
+    /// <c>Text != null</c> que a busca (T7, <c>GET /api/search/options</c>) monta
+    /// <c>exampleQueries</c>. Nenhum embedding aqui: use <see cref="TryGetVector"/> pelo
+    /// <see cref="PrecomputedEntry.SourceHash"/> correspondente.
+    /// </summary>
+    public IReadOnlyList<PrecomputedEntry> Entries { get; }
 
     /// <summary>
     /// Carrega, valida e indexa todos os arquivos em <paramref name="paths"/>. Validação é EAGER e
@@ -69,7 +103,9 @@ public sealed class PrecomputedEmbeddingStore
         }
 
         string? modelId = null;
+        string? modelSourcePath = null;
         var vectorsBySourceHash = new Dictionary<string, float[]>(StringComparer.Ordinal);
+        var entries = new List<PrecomputedEntry>();
 
         foreach (var path in paths)
         {
@@ -78,12 +114,13 @@ public sealed class PrecomputedEmbeddingStore
             if (modelId is null)
             {
                 modelId = artifact.Model;
+                modelSourcePath = path;
             }
             else if (!string.Equals(modelId, artifact.Model, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"Artefatos de vetores pré-computados declaram modelos diferentes: '{modelId}' e " +
-                    $"'{artifact.Model}' (este último em '{path}'). Todos os caminhos em " +
+                    $"Artefatos de vetores pré-computados declaram modelos diferentes: '{modelId}' " +
+                    $"(em '{modelSourcePath}') e '{artifact.Model}' (em '{path}'). Todos os caminhos em " +
                     "Embeddings:PrecomputedPaths precisam vir da MESMA geração/modelo.");
             }
 
@@ -96,11 +133,42 @@ public sealed class PrecomputedEmbeddingStore
                         $"'{entry.Slug ?? "?"}'). Cada sourceHash deve aparecer uma única vez somando " +
                         "todos os artefatos de Embeddings:PrecomputedPaths.");
                 }
+
+                entries.Add(new PrecomputedEntry(entry.Slug, entry.Id, entry.Text, entry.SourceHash));
             }
         }
 
-        return new PrecomputedEmbeddingStore(modelId!, vectorsBySourceHash);
+        // .AsReadOnly() (não o List<T> cru): a lista local não escapa daqui para nenhuma outra
+        // referência, então isto é o bastante para que Entries seja imutável POR CONSTRUÇÃO, não por
+        // convenção — um consumidor não pode recuperar o List<T> original fazendo
+        // (List<PrecomputedEntry>)store.Entries e mutando o singleton em runtime (contradiria
+        // "singleton IMUTÁVEL", XML-doc da classe, e design.md:302).
+        return new PrecomputedEmbeddingStore(modelId!, vectorsBySourceHash, entries.AsReadOnly());
     }
+
+    /// <summary>
+    /// Store "sempre-miss": nenhum caminho foi configurado em <c>Embeddings:PrecomputedPaths</c>
+    /// (MET-479 T6, design.md D8/§5.1). Diferente de <see cref="Load"/> — que EXIGE ao menos um
+    /// caminho e lança se a lista vier vazia, porque para a INGESTÃO (<c>Embeddings:Provider=precomputed</c>,
+    /// <c>EmbeddingProviderRegistration.CreatePrecomputedProvider</c>) uma lista vazia É erro de boot —
+    /// a BUSCA precisa subir mesmo sem nenhum artefato pré-computado configurado (é o caso hoje: o
+    /// default de <c>.env.example</c> é <c>Embeddings__Provider=hashing</c> e
+    /// <c>Embeddings__PrecomputedPaths</c> fica vazio) e responder <c>degraded</c>
+    /// (<c>Embeddings:Provider=hashing</c>) ou <c>unavailable</c> (<c>=precomputed</c>) em vez de
+    /// derrubar o processo — os dois modos existem exatamente para isso (D8 da spec).
+    ///
+    /// <para>
+    /// <b>Não afrouxa nenhuma validação existente:</b> só cobre a ausência TOTAL de caminhos
+    /// configurados. Quando ao menos um caminho ESTÁ configurado, o carregamento continua por
+    /// <see cref="Load"/> normalmente — arquivo listado e ausente, ou <c>model</c> divergente entre
+    /// arquivos, continuam erro de boot, sem exceção.
+    /// </para>
+    /// </summary>
+    public static PrecomputedEmbeddingStore Empty() =>
+        new(
+            modelId: "(nenhum artefato pré-computado configurado)",
+            vectorsBySourceHash: new Dictionary<string, float[]>(StringComparer.Ordinal),
+            entries: Array.Empty<PrecomputedEntry>());
 
     /// <summary>
     /// Busca o vetor de <paramref name="sourceHash"/>. NUNCA lança — devolve
@@ -180,7 +248,7 @@ public sealed class PrecomputedEmbeddingStore
 
             EmbeddingDefaults.ValidateDimensions(entry.Embedding.Length, $"{path} (sourceHash '{entry.SourceHash}')");
 
-            entries.Add(new LoadedVectorEntry(entry.SourceHash, entry.Slug, entry.Embedding));
+            entries.Add(new LoadedVectorEntry(entry.SourceHash, entry.Slug, entry.Id, entry.Text, entry.Embedding));
         }
 
         return new LoadedArtifact(dto.Model, entries);
@@ -191,7 +259,7 @@ public sealed class PrecomputedEmbeddingStore
         "'dotnet run --project src/Prumo.Seed' usando Embeddings__Provider=openai-compatible " +
         "(ver db/seed/README.md).";
 
-    private readonly record struct LoadedVectorEntry(string SourceHash, string? Slug, float[] Embedding);
+    private readonly record struct LoadedVectorEntry(string SourceHash, string? Slug, string? Id, string? Text, float[] Embedding);
 
     private readonly record struct LoadedArtifact(string Model, IReadOnlyList<LoadedVectorEntry> Vectors);
 
@@ -202,8 +270,25 @@ public sealed class PrecomputedEmbeddingStore
         [property: JsonPropertyName("hashAlgorithm")] string? HashAlgorithm,
         [property: JsonPropertyName("vectors")] List<VectorEntryDto>? Vectors);
 
+    /// <summary>
+    /// <c>id</c> e <c>text</c> são ADITIVOS (MET-479 T5/T10, design.md §5.3 e tasks.md T10): o
+    /// artefato de CORPUS (MET-478) só preenche <c>slug</c>/<c>sourceHash</c>/<c>embedding</c>; o
+    /// artefato de CONSULTAS do golden set acrescenta <c>id</c>/<c>text</c> — o texto é o que alimenta
+    /// <c>exampleQueries</c> (não é segredo: já está versionado em <c>eval/golden-set.json</c>).
+    /// </summary>
     private sealed record VectorEntryDto(
         [property: JsonPropertyName("slug")] string? Slug,
+        [property: JsonPropertyName("id")] string? Id,
+        [property: JsonPropertyName("text")] string? Text,
         [property: JsonPropertyName("sourceHash")] string? SourceHash,
         [property: JsonPropertyName("embedding")] float[]? Embedding);
 }
+
+/// <summary>
+/// Uma entrada carregada de um artefato de <see cref="PrecomputedEmbeddingStore"/>, sem o vetor (que
+/// se busca separadamente por <see cref="PrecomputedEmbeddingStore.TryGetVector"/> usando
+/// <see cref="SourceHash"/>). <see cref="Slug"/> identifica um profissional do corpus;
+/// <see cref="Id"/>/<see cref="Text"/> identificam uma consulta do golden set (design.md §5.1) — uma
+/// entrada normalmente preenche um par ou outro, nunca os quatro campos ao mesmo tempo.
+/// </summary>
+public sealed record PrecomputedEntry(string? Slug, string? Id, string? Text, string SourceHash);

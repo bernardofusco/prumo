@@ -3,8 +3,40 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
 using Prumo.Api.Data;
+using Prumo.Api.Embeddings;
+using Prumo.Api.Search;
+using Prumo.Api.Search.QueryEmbedding;
+using Prumo.Api.Search.Ranking;
+using Prumo.Api.Search.Retrieval;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Default de Embeddings:Provider SÓ para esta API, e SÓ quando NADA já definiu a chave (nem
+// appsettings.json, nem appsettings.Development.json, nem variável de ambiente, nem argumento de
+// linha de comando — builder.Configuration já reflete todos esses, nesta ordem de precedência,
+// neste ponto do arquivo). Escrito em CÓDIGO, não em appsettings.json — achado do review da T6:
+// appsettings.json é Content do Sdk.Web e o MSBuild o copia para a saída de QUALQUER projeto que
+// referencie Prumo.Api, inclusive src/Prumo.Seed (confirmado ao vivo: rodar o executável do seed a
+// partir da própria pasta de saída, ou de um publish, herdava esse default silenciosamente — o
+// oposto do que a MET-478 quer da ingestão, "gravar vetor por engano é pior que parar"). Uma linha
+// presa a ESTE Program.cs nunca alcança src/Prumo.Seed/Program.cs, que é um composition root
+// inteiramente separado e não executa nada deste arquivo.
+if (builder.Configuration[EmbeddingProviderRegistration.ProviderConfigurationKey] is null)
+{
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        [EmbeddingProviderRegistration.ProviderConfigurationKey] = EmbeddingProviderRegistration.HashingProviderName,
+    });
+}
+
+// application/problem+json para TODO erro de cliente — inclusive os que o próprio framework gera
+// (ex.: falha ao vincular "limit=abc" a int?, antes de qualquer código desta API rodar) e SEM stack
+// trace (nem em Development, o ambiente padrão de quem clona o repo) — achado do review da T6, dois
+// problemas provados ao vivo com curl: (1) sem AddProblemDetails(), a falha de binding virava
+// text/plain com o nome de um tipo .NET; (2) mesmo com AddProblemDetails(), o
+// DeveloperExceptionPageMiddleware do ASP.NET Core anexava uma extensão "exception" com stack trace
+// completo. Ver XML-doc de SearchEndpoints.ConfigureProblemDetails para os dois.
+builder.Services.AddProblemDetails(SearchEndpoints.ConfigureProblemDetails);
 
 // Acesso a dados via EF Core (ADR-001): connection string só por configuração
 // (ConnectionStrings__Prumo, ver .env.example), nunca hardcoded. Sem Migrations do EF — schema é
@@ -22,6 +54,31 @@ builder.Services.AddDbContext<PrumoDbContext>((serviceProvider, options) =>
     // (ex.: <=>/cosseno) — forma documentada para o cenário de injeção de dependência.
     options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.UseVector());
 });
+
+// Pesos/decaimento/corte do ranking híbrido (MET-479, design.md §2, D2 da spec): validados NO BOOT
+// (ValidateOnStart) — configuração inválida derruba a inicialização, nunca a primeira busca.
+builder.Services.AddRankingOptions(builder.Configuration);
+
+// Limites e defaults de GET /api/search (MET-479 T6, design.md §2) — mesmo padrão de validação no
+// boot que AddRankingOptions acima.
+builder.Services.AddSearchOptions(builder.Configuration);
+
+// Cadeia de embedding em runtime (MET-479, design.md §5, D8). Escopo ampliado da T6 (achado do
+// review da T5): nada disto estava registrado — AddEmbeddingProvider (MET-478) nem era chamado por
+// esta API, e o único ponto que construía um PrecomputedEmbeddingStore só cobria
+// Embeddings:Provider=precomputed. AddEmbeddingProvider primeiro (valida Embeddings:Provider
+// sincronamente, aqui); AddSearchQueryEmbedding depois (registra o store da busca — consultado
+// PRIMEIRO para QUALQUER provider — e o ISearchQueryEmbedder; ver XML-doc de
+// SearchQueryEmbeddingRegistration para os dois problemas de composição que ela resolve).
+builder.Services.AddEmbeddingProvider(builder.Configuration);
+builder.Services.AddSearchQueryEmbedding(builder.Configuration);
+
+// Recuperação de candidatos (MET-479 T4, design.md §3): thin wrapper sobre PrumoDbContext, scoped
+// (mesmo ciclo de vida do DbContext que envolve). Registrado pela INTERFACE (achado do review da
+// T6) — SearchEndpoints depende de IProfessionalSearchQuery, não do tipo concreto, para que testes
+// possam substituir por um fake que registra invocações (prova "validação antes de I/O" e o
+// CancellationToken pinado, sem precisar de Postgres real).
+builder.Services.AddScoped<IProfessionalSearchQuery, ProfessionalSearchQuery>();
 
 var app = builder.Build();
 
@@ -51,6 +108,11 @@ api.MapGet("/health/db", async Task<IResult> (
         new DatabaseHealthResponse(Status: "degraded", Database: "unreachable"),
         statusCode: StatusCodes.Status503ServiceUnavailable);
 });
+
+// GET /api/search (MET-479 T6, design.md §6): junta recuperação + embedding da consulta + ranking e
+// devolve o resultado já explicado. A única linha desta feature em Program.cs — o resto mora em
+// Search/SearchEndpoints.cs.
+api.MapSearch();
 
 app.Run();
 
