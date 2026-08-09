@@ -17,7 +17,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<PrumoDbContext>((serviceProvider, options) =>
 {
     var connectionString = serviceProvider.GetRequiredService<IConfiguration>().GetConnectionString("Prumo");
-    options.UseNpgsql(connectionString);
+    // UseVector() (Pgvector.EntityFrameworkCore, design.md §3.2 da MET-478) habilita o mapeamento
+    // do tipo vector do pgvector (Professional.Embedding) e os operadores de distância via LINQ
+    // (ex.: <=>/cosseno) — forma documentada para o cenário de injeção de dependência.
+    options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.UseVector());
 });
 
 var app = builder.Build();

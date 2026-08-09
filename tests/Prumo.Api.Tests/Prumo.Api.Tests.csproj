@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Prumo.Api\Prumo.Api.csproj" />
+    <!-- SeedIdempotencyTests/SeedDesyncTests (MET-478 T7) instanciam SeedRunner diretamente. -->
+    <ProjectReference Include="..\..\src\Prumo.Seed\Prumo.Seed.csproj" />
   </ItemGroup>
 
 </Project>

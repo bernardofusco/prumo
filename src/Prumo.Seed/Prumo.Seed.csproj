@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework/Nullable/ImplicitUsings vêm de Directory.Build.props (fonte única). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Comando de ingestão (MET-478 T7, design.md §6, D6 da spec): console que referencia
+      src/Prumo.Api, onde já vivem PrumoDbContext e a abstração de embeddings — nada de schema ou
+      entidade duplicados aqui. O fallback do D6 (subcomando dentro da própria API) não foi
+      necessário: este ProjectReference para um projeto Sdk.Web a partir de um console NÃO atritou
+      com TreatWarningsAsErrors — Microsoft.Extensions.Hosting (Host.CreateApplicationBuilder) e
+      Microsoft.Extensions.Http (AddHttpClient, usado por EmbeddingProviderRegistration) chegam por
+      FrameworkReference transitiva de Microsoft.AspNetCore.App através deste ProjectReference;
+      nenhum PackageReference adicional foi preciso para elas.
+    -->
+    <ProjectReference Include="..\Prumo.Api\Prumo.Api.csproj" />
+  </ItemGroup>
+
+</Project>
