@@ -1,7 +1,9 @@
 using System.Globalization;
 
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
+using Prumo.Api.Data;
 using Prumo.Api.Embeddings;
 using Prumo.Api.Search.QueryEmbedding;
 using Prumo.Api.Search.Ranking;
@@ -10,9 +12,12 @@ using Prumo.Api.Search.Retrieval;
 namespace Prumo.Api.Search;
 
 /// <summary>
-/// <c>GET /api/search</c> (design.md §6, BSC-08): junta as três peças (recuperação, embedding da
-/// consulta, ranking) e devolve o ranking já explicado. <c>Program.cs</c> ganha uma única linha
-/// (<c>api.MapSearch()</c>) — a vitrine continua legível, os detalhes ficam neste módulo.
+/// <c>GET /api/search</c> (design.md §6, BSC-08) e <c>GET /api/search/options</c> (design.md §3.5/§6,
+/// BSC-09, T7): o primeiro junta as três peças (recuperação, embedding da consulta, ranking) e
+/// devolve o ranking já explicado; o segundo devolve o que a tela precisa para se montar ANTES de
+/// qualquer busca (consultas de demonstração, cidades do corpus, modo de embedding e defaults).
+/// <c>Program.cs</c> ganha uma única linha (<c>api.MapSearch()</c>) — a vitrine continua legível, os
+/// detalhes ficam neste módulo.
 ///
 /// <para>
 /// Ordem de execução do handler, fixa (design.md §6): (1) validar parâmetros — SEM NENHUM I/O, testável
@@ -36,6 +41,10 @@ public static class SearchEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapGet("/search", HandleSearchAsync);
+
+        // GET /api/search/options (design.md §3.5/§6, BSC-09, T7): o que a tela precisa para se
+        // montar numa chamada só, ANTES de qualquer busca — ver HandleSearchOptionsAsync.
+        endpoints.MapGet("/search/options", HandleSearchOptionsAsync);
 
         return endpoints;
     }
@@ -216,6 +225,121 @@ public static class SearchEndpoints
             "retornado 422 antes de chegar aqui)."),
     };
 
+    // ---- GET /api/search/options (design.md §3.5/§6, BSC-09, T7) -------------------------------------
+
+    /// <summary>
+    /// <c>GET /api/search/options</c>: tudo que a tela busca numa chamada só, ANTES de qualquer busca —
+    /// consultas de demonstração (<see cref="BuildExampleQueries"/>, mesma regra do 422 em
+    /// <see cref="EmbeddingUnavailableProblem"/>), cidades do corpus com centroide, e o modo de
+    /// embedding CONFIGURADO (independente de qualquer consulta específica — ver
+    /// <see cref="MapConfiguredProviderNameToEmbeddingMode"/>). Sem validação de parâmetro nenhuma —
+    /// este endpoint não recebe parâmetro nenhum — e sempre 200 (design §3.5 não descreve nenhum
+    /// caminho de erro: corpus vazio ou artefato ausente são estados normais, nunca 4xx/5xx).
+    ///
+    /// <para>
+    /// <b>Cidades via LINQ, não SQL cru</b> ("Reuses" da T7, tasks.md: "PrumoDbContext (LINQ) — nada
+    /// de SQL cru onde o LINQ resolve", design.md §3.5): <c>GroupBy</c> seguido de <c>Select</c> com
+    /// agregação (<c>Average</c>) é o padrão que o provider Npgsql traduz para <c>GROUP BY</c> +
+    /// <c>avg(...)</c> no SQL — confirmado contra o Postgres real, através do PRÓPRIO handler (não
+    /// uma consulta duplicada num teste à parte), em
+    /// <c>SearchOptionsEndpointTests.GetSearchOptions_ThroughTheRealHandler_ExecutesExactlyOneSqlCommandWithGroupByAndAvg</c>
+    /// (LIBDOCS/context7 indisponíveis nesta sessão; nada aqui foi escrito de memória).
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Achado empírico (confirmado contra o Postgres real, não de memória):</b> projetar o
+    /// resultado do <c>GroupBy</c> DIRETO para o construtor de <see cref="CityOption"/> (a forma
+    /// literal do design.md §3.5, <c>.Select(g =&gt; new CityOption(...))</c>) NÃO traduz nesta
+    /// combinação EF Core 10/Npgsql — o provider lança <c>InvalidOperationException</c> em runtime
+    /// ("could not be translated"), em vez de silenciosamente cair para avaliação em memória (o
+    /// comportamento correto do EF Core desde a 3.0, mas ainda assim um caminho que precisa de ajuste
+    /// aqui). A MESMA agregação projetada para um tipo ANÔNIMO traduz sem problema — por isso a
+    /// consulta abaixo materializa para o tipo anônimo primeiro (a AGREGAÇÃO acontece no banco,
+    /// <c>GROUP BY</c> + <c>avg(...)</c>, como o teste acima prova) e só DEPOIS empacota cada linha já
+    /// materializada em <see cref="CityOption"/> — mapeamento trivial sobre uma lista pequena (uma
+    /// cidade por linha) já trazida do banco, não uma segunda agregação em memória.
+    /// </para>
+    ///
+    /// <para>
+    /// Nenhum filtro geográfico, nenhuma lista fixa de cidades, nenhum geocodificador externo: o
+    /// centroide é do CORPUS (design.md §3.5).
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> HandleSearchOptionsAsync(
+        PrumoDbContext dbContext,
+        PrecomputedEmbeddingStore precomputedStore,
+        IOptions<SearchOptions> searchOptionsAccessor,
+        IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var searchOptions = searchOptionsAccessor.Value;
+
+        var cityAggregates = await dbContext.Professionals
+            .GroupBy(p => new { p.City, p.State })
+            .Select(g => new { g.Key.City, g.Key.State, Latitude = g.Average(p => p.Latitude), Longitude = g.Average(p => p.Longitude) })
+            .OrderBy(c => c.City)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var cities = cityAggregates
+            .Select(c => new CityOption(c.City, c.State, c.Latitude, c.Longitude))
+            .ToList();
+
+        var configuredProviderName = configuration[EmbeddingProviderRegistration.ProviderConfigurationKey];
+
+        return TypedResults.Ok(new SearchOptionsResponse(
+            EmbeddingMode: MapConfiguredProviderNameToEmbeddingMode(configuredProviderName),
+            DefaultResultLimit: searchOptions.DefaultResultLimit,
+            ExampleQueries: BuildExampleQueries(precomputedStore, searchOptions),
+            Cities: cities));
+    }
+
+    /// <summary>
+    /// <c>embeddingMode</c> de <c>GET /api/search/options</c> — MESMO vocabulário de três valores que
+    /// <see cref="SearchEmbeddingInfo.Mode"/> já usa (<c>precomputed</c> | <c>provider</c> |
+    /// <c>degraded</c>), para que o frontend não precise interpretar um segundo vocabulário (spec.md,
+    /// "Contrato API ↔ Frontend": "o frontend não interpreta além de exibir o aviso de degraded").
+    /// Ao contrário do <c>mode</c> da resposta de busca (que reflete o desfecho de UMA consulta
+    /// específica, ver <see cref="MapEmbeddingMode"/>), este valor é ESTÁTICO: deriva só de
+    /// <c>Embeddings:Provider</c> configurado (já validado no boot por
+    /// <c>EmbeddingProviderRegistration.AddEmbeddingProvider</c>), sem tentar vetorizar nada nem
+    /// consultar o store — é o que permite avisar a UI de um modo degradado (R8 do design) antes
+    /// mesmo da primeira busca.
+    /// </summary>
+    private static string MapConfiguredProviderNameToEmbeddingMode(string? configuredProviderName) => configuredProviderName switch
+    {
+        EmbeddingProviderRegistration.PrecomputedProviderName => "precomputed",
+        EmbeddingProviderRegistration.OpenAiCompatibleProviderName => "provider",
+        EmbeddingProviderRegistration.HashingProviderName => "degraded",
+        // Inalcançável em prática: EmbeddingProviderRegistration.AddEmbeddingProvider já validou
+        // Embeddings:Provider no boot (mesma defesa de MapEmbeddingMode/SearchQueryEmbedder).
+        _ => throw new InvalidOperationException(
+            $"{EmbeddingProviderRegistration.ProviderConfigurationKey} inválido em runtime: " +
+            $"'{configuredProviderName ?? "(não configurado)"}'. Valores aceitos: " +
+            $"'{EmbeddingProviderRegistration.HashingProviderName}', " +
+            $"'{EmbeddingProviderRegistration.PrecomputedProviderName}', " +
+            $"'{EmbeddingProviderRegistration.OpenAiCompatibleProviderName}'."),
+    };
+
+    /// <summary>
+    /// Consultas de demonstração: as <see cref="PrecomputedEmbeddingStore.Entries"/> que TÊM texto
+    /// (as do artefato de CONSULTAS do golden set — MET-479/T10), na ordem do arquivo, limitadas a
+    /// <see cref="SearchOptions.ExampleQueryLimit"/> (design.md §5.2/§3.5). Reusada pelo 422
+    /// (<see cref="EmbeddingUnavailableProblem"/>) e por <c>GET /api/search/options</c>
+    /// (<see cref="HandleSearchOptionsAsync"/>, T7) — MESMA regra nos dois lugares, um só ponto de
+    /// verdade. Entradas do artefato de CORPUS (só <see cref="PrecomputedEntry.Slug"/>, sem
+    /// <see cref="PrecomputedEntry.Text"/>) são excluídas: um mutante que trocasse o filtro por "todas
+    /// as entradas" vazaria descrição de profissional como se fosse consulta clicável. Artefato de
+    /// consultas ausente ⇒ <see cref="PrecomputedEmbeddingStore.Entries"/> vazio ⇒ lista vazia — não é
+    /// erro (design.md §5.2, spec.md J4).
+    /// </summary>
+    private static List<string> BuildExampleQueries(PrecomputedEmbeddingStore store, SearchOptions options) =>
+        store.Entries
+            .Where(entry => entry.Text is not null)
+            .Select(entry => entry.Text!)
+            .Take(options.ExampleQueryLimit)
+            .ToList();
+
     // ---- respostas de erro (application/problem+json, spec.md "Contrato API ↔ Frontend") ----------
 
     private static IResult InvalidRequestProblem(string detail) =>
@@ -246,11 +370,7 @@ public static class SearchEndpoints
     private static IResult EmbeddingUnavailableProblem(
         QueryEmbeddingUnavailableReason? reason, PrecomputedEmbeddingStore store, SearchOptions options)
     {
-        var exampleQueries = store.Entries
-            .Where(entry => entry.Text is not null)
-            .Select(entry => entry.Text!)
-            .Take(options.ExampleQueryLimit)
-            .ToList();
+        var exampleQueries = BuildExampleQueries(store, options);
 
         var detail = reason switch
         {

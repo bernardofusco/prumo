@@ -3,12 +3,15 @@ using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 using Pgvector;
+using Pgvector.EntityFrameworkCore;
 
+using Prumo.Api.Data;
 using Prumo.Api.Embeddings;
 using Prumo.Api.Search;
 using Prumo.Api.Search.QueryEmbedding;
@@ -65,8 +68,19 @@ internal static class SearchEndpointTestHost
         builder.Services.AddSearchOptions(builder.Configuration);
         builder.Services.AddProblemDetails(SearchEndpoints.ConfigureProblemDetails);
 
-        // Nenhum PrumoDbContext/ConnectionStrings:Prumo registrado — desnecessário: IProfessionalSearchQuery
-        // é o FAKE abaixo, nunca o tipo real que precisaria de banco.
+        // MapSearch() (T7) também registra GET /api/search/options, cujo handler pede PrumoDbContext
+        // via DI — sem NENHUM registro do tipo, o Minimal API não o reconhece como serviço e tenta
+        // inferi-lo como corpo de requisição, o que derruba a CONSTRUÇÃO DE TODOS os endpoints deste
+        // grupo (inclusive /api/search) na primeira requisição, não só de /options. A connection
+        // string abaixo nunca é usada de verdade — resolução de conexão é preguiçosa (mesmo
+        // comentário em Program.cs) e nenhum teste deste host chama /api/search/options;
+        // IProfessionalSearchQuery continua sendo o FAKE abaixo para /api/search, nunca o tipo real
+        // que exigiria banco de verdade.
+        builder.Services.AddDbContext<PrumoDbContext>(options =>
+            options.UseNpgsql(
+                "Host=localhost;Database=prumo-search-endpoint-test-host-placeholder;Username=placeholder;Password=placeholder",
+                npgsqlOptions => npgsqlOptions.UseVector()));
+
         builder.Services.AddSingleton(store);
         builder.Services.AddSingleton(embedder);
         builder.Services.AddSingleton(searchQuery);

@@ -73,3 +73,30 @@ public sealed record SearchScoreFactors(
     [property: JsonPropertyName("proximity")] double? Proximity,
     [property: JsonPropertyName("semanticContribution")] double SemanticContribution,
     [property: JsonPropertyName("proximityContribution")] double? ProximityContribution);
+
+/// <summary>
+/// Contrato de resposta 200 de <c>GET /api/search/options</c> (design.md §3.5/§6, spec.md "Contrato
+/// API ↔ Frontend", BSC-09, T7): tudo que a tela precisa para se montar numa chamada só — antes de
+/// qualquer busca — consultas de demonstração, cidades do corpus, o modo de embedding CONFIGURADO e
+/// os defaults de resultado. Mesmo padrão de <c>record</c> com <see cref="JsonPropertyNameAttribute"/>
+/// explícito que <see cref="SearchResponse"/> já usa.
+/// </summary>
+public sealed record SearchOptionsResponse(
+    [property: JsonPropertyName("embeddingMode")] string EmbeddingMode,
+    [property: JsonPropertyName("defaultResultLimit")] int DefaultResultLimit,
+    [property: JsonPropertyName("exampleQueries")] IReadOnlyList<string> ExampleQueries,
+    [property: JsonPropertyName("cities")] IReadOnlyList<CityOption> Cities);
+
+/// <summary>
+/// Uma cidade do corpus, com o CENTROIDE (média de latitude/longitude) dos profissionais que nela
+/// atuam (design.md §3.5: "o centroide é do corpus, não de um geocodificador" — nenhuma coordenada
+/// fixa/hardcoded, nenhum serviço de geocodificação externo). <see cref="Latitude"/>/
+/// <see cref="Longitude"/> vêm de <c>AVG(...)</c> agregado no banco sobre <c>professionals.latitude</c>/
+/// <c>longitude</c> (LINQ <c>GroupBy</c> + <c>Average</c>, traduzido pelo provider Npgsql — ver
+/// <see cref="SearchEndpoints"/>).
+/// </summary>
+public sealed record CityOption(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("latitude")] double Latitude,
+    [property: JsonPropertyName("longitude")] double Longitude);
