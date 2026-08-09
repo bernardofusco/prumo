@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
 using Prumo.Api.Data;
+using Prumo.Api.Search.Ranking;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +23,10 @@ builder.Services.AddDbContext<PrumoDbContext>((serviceProvider, options) =>
     // (ex.: <=>/cosseno) — forma documentada para o cenário de injeção de dependência.
     options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.UseVector());
 });
+
+// Pesos/decaimento/corte do ranking híbrido (MET-479, design.md §2, D2 da spec): validados NO BOOT
+// (ValidateOnStart) — configuração inválida derruba a inicialização, nunca a primeira busca.
+builder.Services.AddRankingOptions(builder.Configuration);
 
 var app = builder.Build();
 
