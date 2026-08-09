@@ -130,6 +130,25 @@ public sealed class SearchRequestValidationTests(WebApplicationFactory<Program> 
         await AssertInvalidRequestAsync($"/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng={lngText}");
     }
 
+    /// <summary>
+    /// Achado do review da T8 (frontend), fechado no backend: <c>double.TryParse("NaN", ...)</c> —
+    /// o binder de query string do Minimal API — devolve <c>true</c> com valor <c>NaN</c>, e o
+    /// padrão <c>lat.Value is &lt; MinLatitude or &gt; MaxLatitude</c> avalia <c>false</c> para
+    /// <c>NaN</c> em QUALQUER comparação (IEEE 754). Sem uma checagem própria, <c>lat=NaN</c>
+    /// passaria pela validação inteira e seguiria para a consulta ao banco. <c>Infinity</c> já é
+    /// barrado pela faixa (não precisa de teste aqui — coberto por
+    /// <see cref="GetSearch_WithLatOutOfRange_Returns400InvalidRequest"/> em espírito, já que
+    /// qualquer valor fora de [-90, 90] cai lá).
+    /// </summary>
+    [Theory]
+    [InlineData("lat=NaN&lng=-43.9352")]
+    [InlineData("lat=-19.9245&lng=NaN")]
+    [InlineData("lat=NaN&lng=NaN")]
+    public async Task GetSearch_WithNaNCoordinate_Returns400InvalidRequest(string locationQuery)
+    {
+        await AssertInvalidRequestAsync($"/api/search?q=vazamento+no+banheiro&{locationQuery}");
+    }
+
     [Fact]
     public async Task GetSearch_WithRadiusKmButWithoutLocation_Returns400InvalidRequest()
     {

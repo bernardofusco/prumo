@@ -463,6 +463,18 @@ internal static class SearchRequestValidator
 
         if (lat.HasValue && lng.HasValue)
         {
+            // `double.TryParse("NaN", ...)` (o binder de query string do Minimal API) devolve
+            // `true` com `NaN` — e `NaN is < MinLatitude or > MaxLatitude` avalia `false` para
+            // QUALQUER comparação com NaN (IEEE 754: NaN não é maior, menor NEM igual a nada,
+            // nem a si mesmo), então a checagem de faixa abaixo não barra `lat=NaN`/`lng=NaN`
+            // sozinha — `Infinity` já é barrado por ela (é maior que o teto), mas NaN precisa de
+            // checagem própria, ANTES da faixa. Achado do review da T8 (frontend), fechado aqui.
+            if (double.IsNaN(lat.Value) || double.IsNaN(lng.Value))
+            {
+                return SearchRequestValidationResult.Invalid(
+                    "Os parâmetros 'lat' e 'lng' precisam ser números válidos ('NaN' não é uma coordenada).");
+            }
+
             if (lat.Value is < MinLatitude or > MaxLatitude)
             {
                 return SearchRequestValidationResult.Invalid(
