@@ -1,0 +1,147 @@
+{
+  "_note": "RÉGUA DO M1 (spec MET-479, specs/features/met-479-busca-ranking-hibrido/spec.md, 'Medição do Case'). Estas 20 consultas, os resultados esperados e as métricas que as julgam (tests/Prumo.Api.Tests/Eval/EvalMetrics.cs) são o instrumento que mede se o ranking híbrido funciona. Mudar QUALQUER consulta, expectedSpecialties, expectedRankedAbove ou notes aqui DEPOIS do congelamento (fechamento da MET-479 na T12) exige ADR + decisão do dono — project/adr/README.md. Antes do congelamento (durante a T11), uma consulta só pode ser ajustada se estiver errada ou ambígua no corpus real, e o ajuste vai registrado no relatório da task que o fez — nunca removida ou reescrita só porque falhou.",
+  "queries": [
+    {
+      "id": "gs-01",
+      "text": "vazamento no banheiro",
+      "location": null,
+      "expectedSpecialties": ["encanador"],
+      "notes": "A frase do case (spec 'Objetivo' item 2; DoD literal da issue, L4). Sem localização. Sem vocabulário de encanador (nem 'encanador' nem nenhum corpusSynonym). Plausível no corpus: várias descrições de encanador mencionam vazamento em pia/parede/banheiro (ex. Ana Oliveira 'ana-oliveira-bh-001' — 'emergência de vazamento embaixo da pia'; Camila Correia 'camila-correia-dcx-009' — 'a água começa a escorrer pela parede do banheiro sem explicação aparente')."
+    },
+    {
+      "id": "gs-02",
+      "text": "minha torneira não para de pingar a noite toda",
+      "location": null,
+      "expectedSpecialties": ["encanador"],
+      "notes": "Sintoma, não catálogo: sem 'encanador' nem corpusSynonyms. Plausível: Marcos Araújo ('marcos-araujo-nit-008') descreve quase literalmente 'aquela torneira que fica pingando a noite inteira'."
+    },
+    {
+      "id": "gs-03",
+      "text": "a luz da cozinha fica piscando toda hora, sem motivo aparente",
+      "location": null,
+      "expectedSpecialties": ["eletricista"],
+      "notes": "Sem vocabulário de eletricista. Plausível: Rodrigo Costa ('rodrigo-costa-rp-018') descreve quase literalmente 'a luz da cozinha fica piscando sem motivo'."
+    },
+    {
+      "id": "gs-04",
+      "text": "minha casa ficou toda no escuro depois da tempestade e o painel não para de desarmar",
+      "location": null,
+      "expectedSpecialties": ["eletricista"],
+      "notes": "Sem vocabulário de eletricista. Plausível: Vanessa Carvalho ('vanessa-carvalho-bh-019') descreve 'casa que fica no escuro depois de uma tempestade e painel que desarma toda vez que o forno liga'."
+    },
+    {
+      "id": "gs-05",
+      "text": "a parede da sala está descascando e cheia de mofo",
+      "location": null,
+      "expectedSpecialties": ["pintor"],
+      "notes": "Sem vocabulário de pintor. Plausível: Fernando Duarte ('fernando-duarte-pet-028') descreve 'parede descascada e cheia de mofo com aparência de recém-reformada'."
+    },
+    {
+      "id": "gs-06",
+      "text": "meu filho rabiscou a parede toda da sala com caneta",
+      "location": null,
+      "expectedSpecialties": ["pintor"],
+      "notes": "Sem vocabulário de pintor. Plausível: Ricardo Almeida ('ricardo-almeida-vre-030') descreve 'cubro rabisco de criança na parede da sala e devolvo o branco original'."
+    },
+    {
+      "id": "gs-07",
+      "text": "preciso deixar a casa impecável antes de uma visita chegar",
+      "location": null,
+      "expectedSpecialties": ["diarista"],
+      "notes": "Sem vocabulário de diarista (nem 'diarista', 'faxina' ou 'limpeza'). Plausível: Gabriel Freitas ('gabriel-freitas-ubl-038') descreve 'deixo a casa impecável do chão ao teto'."
+    },
+    {
+      "id": "gs-08",
+      "text": "o mato do quintal do condomínio está alto e ninguém corta",
+      "location": null,
+      "expectedSpecialties": ["jardineiro"],
+      "notes": "Sem vocabulário de jardineiro (nem 'poda', 'grama', 'jardim'). Plausível: Márcia Nunes ('marcia-nunes-rj-043') descreve 'área comum do condomínio sempre aparada, sem mato alto'."
+    },
+    {
+      "id": "gs-09",
+      "text": "fiquei trancado do lado de fora de casa e não consigo entrar",
+      "location": null,
+      "expectedSpecialties": ["chaveiro"],
+      "notes": "Sem vocabulário de chaveiro. Plausível: Juliana Costa ('juliana-costa-jf-058') descreve quase literalmente 'ficou trancado do lado de fora? resolvo na hora'."
+    },
+    {
+      "id": "gs-10",
+      "text": "falta uma estante na sala do tamanho certo pro espaço",
+      "location": null,
+      "expectedSpecialties": ["marceneiro"],
+      "notes": "Sem vocabulário de marceneiro. Plausível: Larissa Duarte ('larissa-duarte-cps-068') descreve 'construo aquela estante que falta na sala, do tamanho exato'."
+    },
+    {
+      "id": "gs-11",
+      "text": "o aparelho do quarto não gela mais e só faz barulho",
+      "location": null,
+      "expectedSpecialties": ["tecnico-ar-condicionado"],
+      "notes": "Sem vocabulário de técnico em ar-condicionado (nem 'split', 'climatiz', 'refrigera'). Plausível: Simone Araújo ('simone-araujo-gru-088') descreve quase literalmente 'aquele aparelho que só faz barulho e não gela mais'."
+    },
+    {
+      "id": "gs-12",
+      "text": "quero sair do sedentarismo sem pagar academia cara",
+      "location": null,
+      "expectedSpecialties": ["personal-trainer"],
+      "notes": "Sem vocabulário de personal trainer (nem 'personal' nem 'treino'). Plausível: Viviane Costa ('viviane-costa-nit-098') descreve 'ajudo a sair do sedentarismo (...) sem equipamento caro nem academia lotada'."
+    },
+    {
+      "id": "gs-13",
+      "text": "meu filho não entende a matéria de jeito nenhum",
+      "location": null,
+      "expectedSpecialties": ["professor-particular"],
+      "notes": "Sem vocabulário de professor particular. Plausível: Juliana Fontes ('juliana-fontes-bh-109') descreve 'explico de um jeito simples aquela matéria que o aluno jura que nunca vai entender'."
+    },
+    {
+      "id": "gs-14",
+      "text": "o espelho do banheiro está todo embaçado e riscado",
+      "location": null,
+      "expectedSpecialties": ["vidraceiro"],
+      "notes": "Sem vocabulário de vidraceiro. Plausível: Fábio Almeida ('fabio-almeida-mcl-150') descreve quase literalmente 'aquele espelho do banheiro embaçado ou lascado? substituo por um novo'."
+    },
+    {
+      "id": "gs-15",
+      "text": "preciso de uma diarista para fazer uma faxina completa no apartamento",
+      "location": null,
+      "expectedSpecialties": ["diarista"],
+      "notes": "Consulta de CONTROLE, com vocabulário ('diarista', 'faxina'): garante que o caso fácil — onde busca por palavra-chave também acertaria — também está coberto pela régua, não só os casos difíceis que separam semântica de keyword. Plausível: Cristina Melo ('cristina-melo-sp-031') — 'diarista com referências, faço limpeza completa da casa'."
+    },
+    {
+      "id": "gs-16",
+      "text": "preciso de um encanador de confiança perto da minha casa",
+      "location": { "latitude": -19.9475, "longitude": -43.9334, "radiusKm": 20 },
+      "expectedSpecialties": ["encanador"],
+      "expectedRankedAbove": [["ana-oliveira-bh-001", "maria-nunes-ctg-003"]],
+      "notes": "Com localização (centroide dos profissionais de Belo Horizonte no corpus) e com vocabulário — o par que separa híbrido de só-semântica (spec 'Medição do Case': 'a única asserção que distingue híbrido de só-semântica de forma não-negociável'). Ana Oliveira ('ana-oliveira-bh-001', Belo Horizonte, ~2,2 km do ponto de busca) e Maria Nunes ('maria-nunes-ctg-003', Contagem, ~15,1 km) são ambas encanadoras com descrições genericamente equivalentes para esta consulta (nenhuma menciona um sintoma específico que a destaque sobre a outra) — a proximidade deveria decidir a ordem. As duas distâncias respeitam o service_radius_km de cada profissional (10 km e 24 km) e o radiusKm do cliente (20 km), então ambas são candidatas válidas."
+    },
+    {
+      "id": "gs-17",
+      "text": "preciso de um montador de móveis de confiança na minha região",
+      "location": { "latitude": -19.9475, "longitude": -43.9334, "radiusKm": 20 },
+      "expectedSpecialties": ["montador-de-moveis"],
+      "expectedRankedAbove": [["felipe-ramos-bh-073", "gustavo-souza-ctg-075"]],
+      "notes": "Segundo par de expectedRankedAbove (BSC-13 exige >= 2). Mesmo ponto de busca de gs-16 (centroide de Belo Horizonte), especialidade diferente para não repetir o mesmo par de cidades. Felipe Ramos ('felipe-ramos-bh-073', Belo Horizonte, ~0,7 km) e Gustavo Souza ('gustavo-souza-ctg-075', Contagem, ~13,7 km) são ambos montadores de móveis com descrições genéricas; a proximidade deveria decidir a ordem. Distâncias dentro do service_radius_km de cada um (22 km e 36 km) e do radiusKm do cliente (20 km)."
+    },
+    {
+      "id": "gs-18",
+      "text": "quero um visual novo pra combinar com o tom da minha pele",
+      "location": { "latitude": -22.4974, "longitude": -43.1812, "radiusKm": 25 },
+      "expectedSpecialties": ["cabeleireiro"],
+      "notes": "Com localização (centroide de Petrópolis no corpus), sem vocabulário de cabeleireiro (nem 'cabelo', nem 'corte de cabelo'). Plausível: Diego Freitas ('diego-freitas-pet-118') descreve quase literalmente 'renovo o visual com um corte novo e um tom de cor que combina com o tom da sua pele'; ~2,2 km do ponto de busca, dentro do seu service_radius_km (50 km)."
+    },
+    {
+      "id": "gs-19",
+      "text": "quero as mãos bonitas pra um evento no fim de semana",
+      "location": { "latitude": -18.9246, "longitude": -48.2793, "radiusKm": 20 },
+      "expectedSpecialties": ["manicure"],
+      "notes": "Com localização (centroide de Uberlândia no corpus), sem vocabulário de manicure (nem 'unha', 'esmalte', 'pedicure'). Plausível: André Araújo ('andre-araujo-ubl-128') descreve 'deixo as mãos com aparência de recém-saídas do salão, prontas para qualquer selfie ou evento'; ~0,7 km do ponto de busca, dentro do seu service_radius_km (38 km)."
+    },
+    {
+      "id": "gs-20",
+      "text": "toda madrugada aparece um bicho na minha cozinha e ele some antes de eu conseguir ver direito",
+      "location": { "latitude": -22.5395, "longitude": -44.1065, "radiusKm": 20 },
+      "expectedSpecialties": ["dedetizador"],
+      "notes": "Com localização (centroide de Volta Redonda no corpus), sem vocabulário de dedetizador (nem 'dedetização', 'praga'). Plausível: Vinícius Costa ('vinicius-costa-vre-138') descreve 'aquele problema de bicho que aparece de madrugada na cozinha e some antes de você acender a luz'; ~1,0 km do ponto de busca, dentro do seu service_radius_km (26 km)."
+    }
+  ]
+}
