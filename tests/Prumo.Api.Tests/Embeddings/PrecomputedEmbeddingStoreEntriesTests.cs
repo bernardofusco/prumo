@@ -41,7 +41,7 @@ public sealed class PrecomputedEmbeddingStoreEntriesTests : IDisposable
     [Fact]
     public void Load_PopulatesEntries_InFileOrder_PreservingSlugIdAndTextPerEntry()
     {
-        const string sharedModel = "openai:text-embedding-3-small@768";
+        const string sharedModel = "openai:text-embedding-3-small@1024";
 
         var corpusPath = WriteArtifact(new ArtifactFixture(
             sharedModel, EmbeddingDefaults.Dimensions, "sha256",
@@ -82,7 +82,7 @@ public sealed class PrecomputedEmbeddingStoreEntriesTests : IDisposable
     public void Dimensions_EqualsEmbeddingDefaultsDimensions()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            "openai:text-embedding-3-small@768", EmbeddingDefaults.Dimensions, "sha256",
+            "openai:text-embedding-3-small@1024", EmbeddingDefaults.Dimensions, "sha256",
             [new VectorFixture("slug-1", null, null, "hash-1", MakeVector(0.1f))]));
 
         var store = PrecomputedEmbeddingStore.Load([path]);
@@ -100,7 +100,7 @@ public sealed class PrecomputedEmbeddingStoreEntriesTests : IDisposable
     public void Entries_CannotBeCastBackToAMutableListToBypassReadOnlyness()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            "openai:text-embedding-3-small@768", EmbeddingDefaults.Dimensions, "sha256",
+            "openai:text-embedding-3-small@1024", EmbeddingDefaults.Dimensions, "sha256",
             [
                 new VectorFixture("slug-1", null, null, "hash-1", MakeVector(0.1f)),
                 new VectorFixture("slug-2", null, null, "hash-2", MakeVector(0.2f)),
@@ -123,10 +123,10 @@ public sealed class PrecomputedEmbeddingStoreEntriesTests : IDisposable
     public void Load_ThrowsAnActionableError_WhenFilesDeclareDifferentModels_CitingBothFilePaths()
     {
         var firstPath = WriteArtifact(new ArtifactFixture(
-            "openai:text-embedding-3-small@768", EmbeddingDefaults.Dimensions, "sha256",
+            "openai:text-embedding-3-small@1024", EmbeddingDefaults.Dimensions, "sha256",
             [new VectorFixture("slug-1", null, null, "hash-1", MakeVector(0.1f))]));
         var secondPath = WriteArtifact(new ArtifactFixture(
-            "local:some-other-model@768", EmbeddingDefaults.Dimensions, "sha256",
+            "local:some-other-model@1024", EmbeddingDefaults.Dimensions, "sha256",
             [new VectorFixture("slug-2", null, null, "hash-2", MakeVector(0.2f))]));
 
         var exception = Assert.Throws<InvalidOperationException>(
@@ -134,8 +134,8 @@ public sealed class PrecomputedEmbeddingStoreEntriesTests : IDisposable
 
         Assert.Contains(firstPath, exception.Message, StringComparison.Ordinal);
         Assert.Contains(secondPath, exception.Message, StringComparison.Ordinal);
-        Assert.Contains("openai:text-embedding-3-small@768", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("local:some-other-model@768", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("openai:text-embedding-3-small@1024", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("local:some-other-model@1024", exception.Message, StringComparison.Ordinal);
     }
 
     private static float[] MakeVector(float value) => Enumerable.Repeat(value, EmbeddingDefaults.Dimensions).ToArray();

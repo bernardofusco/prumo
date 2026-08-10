@@ -21,7 +21,7 @@ namespace Prumo.Api.Tests.Integration;
 ///
 /// <para>
 /// <b>O que este teste mede — e o que ele NÃO mede.</b> Ele prova o PIPELINE: persistência do vetor
-/// na coluna <c>vector(768)</c>, a dimensão correta, o operador <c>&lt;=&gt;</c> do pgvector
+/// na coluna <c>vector(1024)</c> (MET-521; era <c>vector(768)</c>), a dimensão correta, o operador <c>&lt;=&gt;</c> do pgvector
 /// ordenando por distância, e o corpus real de ~150 profissionais. Ele NÃO mede a qualidade
 /// semântica de um provedor real de embeddings. <see cref="HashingEmbeddingProvider"/> é
 /// bag-of-words com hashing trick (ver XML-doc da própria classe): não entende sinônimo nem
@@ -73,15 +73,19 @@ public sealed class SimilaritySmokeTests(PostgresIntegrationFixture fixture)
     ///
     /// As três foram verificadas contra o Postgres real (Testcontainers) antes de entrarem aqui — a
     /// mecânica de hashing trick não é óbvia de prever de cabeça (colisão de hash entre tokens de
-    /// baldes diferentes é possível, mesmo com 768 dimensões), então nenhuma consulta aqui é "óbvia
+    /// baldes diferentes é possível, mesmo com 1024 dimensões), então nenhuma consulta aqui é "óbvia
     /// na teoria, nunca rodada". Distância de cosseno (menor = mais próximo) do vizinho no top-1 vs.
-    /// do vizinho mais próximo de uma especialidade DIFERENTE — margem confortável nas três, medida
-    /// contra o Postgres real, não estimada:
+    /// do vizinho mais próximo **de uma especialidade DIFERENTE** (o mínimo sobre TODO o corpus fora
+    /// da especialidade esperada — não um profissional escolhido a dedo) — margem confortável nas
+    /// três, medida contra o Postgres real, não estimada. Re-medidos na MET-521 (dimensão 768 -> 1024:
+    /// os baldes do hashing trick mudam, então tanto a distância quanto a IDENTIDADE do distrator mais
+    /// próximo mudam — a consulta SQL usada para achar o distrator de verdade em 1024 está no
+    /// relatório da task, não é uma re-medição da distância até o mesmo distrator de 768):
     ///
-    ///  - Q1 (encanador): 0,368 (ana-oliveira-bh-001) vs. 0,660 (felipe-moreira-gru-124, manicure).
-    ///  - Q2 (eletricista): 0,694 (rodrigo-costa-rp-018) vs. 0,787 (lucas-batista-pet-010, encanador).
+    ///  - Q1 (encanador): 0,434 (ana-oliveira-bh-001) vs. 0,660 (gustavo-santos-mcl-024, pintor).
+    ///  - Q2 (eletricista): 0,694 (rodrigo-costa-rp-018) vs. 0,811 (rodrigo-nogueira-vre-120, cabeleireiro).
     ///  - Q3 (dedetizador): 0,484 (debora-moraes-bet-131) vs. 0,764 (debora-nogueira-nit-080,
-    ///    montador-de-moveis).
+    ///    montador-de-moveis) — inalterado: já era o distrator mais próximo em 768.
     /// </summary>
     public static readonly TheoryData<string, string> SimilarityQueries = new()
     {

@@ -37,7 +37,7 @@ public sealed class PrecomputedEmbeddingProviderTests : IDisposable
         var provider = new PrecomputedEmbeddingProvider(store);
 
         Assert.Equal(store.ModelId, provider.ModelId);
-        Assert.Equal("openai:text-embedding-3-small@768", provider.ModelId);
+        Assert.Equal("openai:text-embedding-3-small@1024", provider.ModelId);
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public sealed class PrecomputedEmbeddingProviderTests : IDisposable
             .ToList();
 
         var fixture = new ArtifactFixture(
-            Model: "openai:text-embedding-3-small@768",
+            Model: "openai:text-embedding-3-small@1024",
             Dimensions: EmbeddingDefaults.Dimensions,
             HashAlgorithm: "sha256",
             Vectors: vectors);

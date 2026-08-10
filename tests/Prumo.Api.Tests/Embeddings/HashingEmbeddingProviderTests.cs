@@ -4,17 +4,18 @@ namespace Prumo.Api.Tests.Embeddings;
 
 /// <summary>
 /// <see cref="HashingEmbeddingProvider"/> (design.md §4.4, MET-478 tasks.md T5): bag-of-words com
-/// hashing trick (FNV-1a implementado no projeto), 768 dimensões, L2-normalizado. Nenhum destes
-/// testes usa rede — o provider é 100% determinístico e local (project/development-rules.md).
+/// hashing trick (FNV-1a implementado no projeto), 1024 dimensões (D3 da spec MET-478, revista em
+/// MET-521 — era 768), L2-normalizado. Nenhum destes testes usa rede — o provider é 100%
+/// determinístico e local (project/development-rules.md).
 /// </summary>
 public sealed class HashingEmbeddingProviderTests
 {
     private readonly HashingEmbeddingProvider _provider = new();
 
     [Fact]
-    public void ModelId_IsHashingV1At768()
+    public void ModelId_IsHashingV1At1024()
     {
-        Assert.Equal("hashing:v1@768", _provider.ModelId);
+        Assert.Equal("hashing:v1@1024", _provider.ModelId);
     }
 
     [Fact]
@@ -108,7 +109,7 @@ public sealed class HashingEmbeddingProviderTests
     /// propriedades que qualquer função determinística satisfaz. Determinismo, dimensão e norma
     /// não distinguem FNV-1a de <c>string.GetHashCode()</c> chamado duas vezes no mesmo processo,
     /// nem de FNV-1 (ordem de xor/multiplicação trocada), nem de um primo diferente — os três
-    /// passam pelo resto da suíte porque também são funções determinísticas de 768 dimensões que
+    /// passam pelo resto da suíte porque também são funções determinísticas de 1024 dimensões que
     /// produzem vetor L2-normalizado. Só um valor exato pré-calculado fora deste código mata os
     /// três.
     ///
@@ -120,8 +121,11 @@ public sealed class HashingEmbeddingProviderTests
     ///
     /// Os quatro índices e o valor 0.5 foram recalculados de forma independente (script Python
     /// reimplementando FNV-1a/tokenização/L2 fora deste repositório, não copiado da própria
-    /// implementação nem do relatório do reviewer sem conferir) — ver relatório da task para o
-    /// script e a saída.
+    /// implementação nem do relatório do reviewer sem conferir — offset basis 2166136261, primo
+    /// 16777619, hash % 1024) para a MET-521 (dimensão 768 -> 1024): os índices mudam com o número
+    /// de baldes (mod 1024 em vez de mod 768), mas os MESMOS quatro tokens e o MESMO valor 0.5 por
+    /// componente, porque nem a tokenização nem a contagem de tokens mudam com a dimensão. Ver
+    /// relatório da task para o script e a saída.
     /// </summary>
     [Fact]
     public async Task EmbedAsync_ProducesTheExactGoldenVector_ForAFixedDocument()
@@ -129,10 +133,10 @@ public sealed class HashingEmbeddingProviderTests
         var vectors = await _provider.EmbedAsync(["Conserto vazamento embaixo da pia."], CancellationToken.None);
 
         var expected = new float[EmbeddingDefaults.Dimensions];
-        expected[6] = 0.5f; // "vazamento"
         expected[105] = 0.5f; // "pia"
-        expected[308] = 0.5f; // "embaixo"
         expected[442] = 0.5f; // "conserto"
+        expected[518] = 0.5f; // "vazamento"
+        expected[820] = 0.5f; // "embaixo"
 
         Assert.Equal(expected, vectors[0]);
     }

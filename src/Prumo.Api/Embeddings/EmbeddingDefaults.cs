@@ -7,16 +7,19 @@ namespace Prumo.Api.Embeddings;
 public static class EmbeddingDefaults
 {
     /// <summary>
-    /// Dimensão canônica do projeto (D3 da spec MET-478), igual à coluna
-    /// <c>embedding vector(768)</c> de <c>db/migrations/0003_professional_embeddings.sql</c> — os
-    /// dois lados (schema e código) precisam mudar JUNTOS, por isso esta constante NÃO é
+    /// Dimensão canônica do projeto (D3 da spec MET-478, revista em MET-521), igual à coluna
+    /// <c>embedding vector(1024)</c> de <c>db/migrations/0004_professional_embedding_dimension_1024.sql</c>
+    /// — os dois lados (schema e código) precisam mudar JUNTOS, por isso esta constante NÃO é
     /// configuração: uma variável de ambiente aqui poderia divergir do tipo da coluna sem
     /// nenhum erro até a hora de gravar, e um número "sortudo" que combinasse com outro modelo
-    /// mascararia o problema. Trocar a dimensão exige uma migration nova
-    /// (<c>0004_*.sql</c>, <c>ALTER COLUMN embedding TYPE vector(N)</c>) e um re-seed completo —
-    /// nunca uma edição desta constante isolada.
+    /// mascararia o problema. Era 768 (0003_professional_embeddings.sql) até a MET-521 medir que o
+    /// modelo que resolve o corpus em português (<c>bge-m3</c>) produz 1024 nativamente e não é
+    /// treinável para truncamento — ver o comentário de 0004 para a medição completa. Trocar a
+    /// dimensão de novo exige outra migration (<c>0005_*.sql</c>,
+    /// <c>ALTER COLUMN embedding TYPE vector(N)</c>) e um re-seed completo — nunca uma edição desta
+    /// constante isolada.
     /// </summary>
-    public const int Dimensions = 768;
+    public const int Dimensions = 1024;
 
     /// <summary>
     /// Guarda usada por todo <see cref="IEmbeddingProvider"/> antes de devolver um vetor: vetor

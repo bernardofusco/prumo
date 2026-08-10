@@ -31,7 +31,7 @@ namespace Prumo.Api.Tests.Integration;
 [Trait("Category", "Integration")]
 public sealed class ProfessionalSearchQueryTests(PostgresIntegrationFixture fixture)
 {
-    private const int EmbeddingDimensions = 768;
+    private const int EmbeddingDimensions = 1024;
 
     /// <summary>
     /// Limite generoso o bastante para nunca cortar nem os candidatos sintéticos deste arquivo nem o
@@ -356,7 +356,7 @@ public sealed class ProfessionalSearchQueryTests(PostgresIntegrationFixture fixt
             Longitude = longitude,
             ServiceRadiusKm = serviceRadiusKm,
             Embedding = new Vector(embedding),
-            EmbeddingModel = "hashing:v1@768",
+            EmbeddingModel = "hashing:v1@1024",
             EmbeddingSourceHash = $"hash-{label}-professional-search-query",
             EmbeddedAt = new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero),
         };

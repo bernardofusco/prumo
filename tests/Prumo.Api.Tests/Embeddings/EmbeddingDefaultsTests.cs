@@ -16,7 +16,7 @@ public sealed class EmbeddingDefaultsTests
     [Fact]
     public void ValidateDimensions_DoesNotThrow_WhenDimensionMatchesTheCanonicalValue()
     {
-        var exception = Record.Exception(() => EmbeddingDefaults.ValidateDimensions(768, "teste"));
+        var exception = Record.Exception(() => EmbeddingDefaults.ValidateDimensions(1024, "teste"));
 
         Assert.Null(exception);
     }
@@ -24,16 +24,21 @@ public sealed class EmbeddingDefaultsTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    [InlineData(767)]
-    [InlineData(769)]
-    [InlineData(1536)]
+    [InlineData(1023)]
+    [InlineData(1025)]
+    [InlineData(768)]
     public void ValidateDimensions_ThrowsAnActionableError_WhenDimensionDiffersFromTheCanonicalValue(int wrongDimension)
     {
         var exception = Assert.Throws<InvalidOperationException>(
             () => EmbeddingDefaults.ValidateDimensions(wrongDimension, "provider-de-teste"));
 
-        Assert.Contains("768", exception.Message, StringComparison.Ordinal);
-        Assert.Contains(wrongDimension.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1024", exception.Message, StringComparison.Ordinal);
+        // "recebeu {N}." (com o ponto final) e não só wrongDimension.ToString() sozinho: para
+        // wrongDimension 0 ou 1, o dígito isolado é substring trivial de "1024" (que a mensagem já
+        // contém por causa da dimensão canônica) — a asserção antiga passava mesmo se a mensagem
+        // nunca ecoasse a dimensão recebida de verdade. Ancorar em "recebeu {N}." prova que É o
+        // valor recebido, não um dígito qualquer que aparece em outro lugar da frase.
+        Assert.Contains($"recebeu {wrongDimension}.", exception.Message, StringComparison.Ordinal);
         Assert.Contains("provider-de-teste", exception.Message, StringComparison.Ordinal);
     }
 }

@@ -37,7 +37,7 @@ public sealed class Professional
     /// <summary>
     /// Procedência do vetor: os quatro campos abaixo andam juntos — quem garante isso é o CHECK
     /// <c>professionals_embedding_provenance_coherent</c> no banco (0003), não este tipo. Vetor de
-    /// 768 dimensões (<c>vector(768)</c>, D3 da spec MET-478).
+    /// 1024 dimensões (<c>vector(1024)</c>, D3 da spec MET-478, revista em MET-521/0004 — era 768).
     /// </summary>
     public Vector? Embedding { get; set; }
 

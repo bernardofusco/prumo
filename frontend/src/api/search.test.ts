@@ -24,7 +24,7 @@ function problemResponse(status: number, code: string, extra: Record<string, unk
 const VALID_SEARCH_BODY = {
   query: 'vazamento no banheiro',
   geo: { applied: true, radiusKm: 25 },
-  embedding: { mode: 'precomputed', model: 'openai:text-embedding-3-small@768' },
+  embedding: { mode: 'precomputed', model: 'openai:text-embedding-3-small@1024' },
   ranking: { semanticWeight: 0.7, proximityWeight: 0.3, distanceDecayKm: 10, minSemanticScore: 0 },
   totalCandidates: 1,
   results: [

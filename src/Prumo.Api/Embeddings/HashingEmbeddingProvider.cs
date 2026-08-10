@@ -7,7 +7,7 @@ namespace Prumo.Api.Embeddings;
 /// <summary>
 /// Provider bag-of-words com hashing trick (design.md §4.4, MET-478 tasks.md T5): tokeniza o
 /// documento (minúsculas, sem diacríticos, tokens de >= 3 caracteres), acumula
-/// <c>vetor[fnv1a(token) % 768] += 1</c> usando FNV-1a IMPLEMENTADO NESTE ARQUIVO — nunca
+/// <c>vetor[fnv1a(token) % 1024] += 1</c> usando FNV-1a IMPLEMENTADO NESTE ARQUIVO — nunca
 /// <see cref="object.GetHashCode()"/>/<see cref="string.GetHashCode()"/>, que o runtime randomiza
 /// por processo desde .NET Core; usá-lo aqui quebraria o determinismo exigido (mesma entrada
 /// produzindo o mesmo vetor em qualquer máquina e execução) e dessincronizaria a ingestão sem
@@ -32,7 +32,7 @@ public sealed class HashingEmbeddingProvider : IEmbeddingProvider
     /// mudança que <see cref="EmbeddingDecision.NeedsEmbedding"/> usa o modelo gravado por linha
     /// para detectar (troca de "provedor").
     /// </summary>
-    public string ModelId => "hashing:v1@768";
+    public string ModelId => "hashing:v1@1024";
 
     public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> documents, CancellationToken cancellationToken)
     {

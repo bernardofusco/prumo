@@ -11,21 +11,22 @@ namespace Prumo.Api.Tests.Integration;
 /// <c>professionals_embedding_provenance_coherent</c> (0003_professional_embeddings.sql,
 /// design.md §2.2) REJEITA um vetor gravado sem procedência completa (modelo, hash ou timestamp
 /// faltando) e ACEITA tanto "os quatro preenchidos" quanto "os quatro nulos". Também prova que a
-/// coluna <c>embedding vector(768)</c> rejeita, pelo TIPO da coluna, qualquer vetor de dimensão
-/// diferente de 768 — aqui não há constraint nomeada, então a asserção fica no que é observável
-/// (SqlState + trecho de mensagem), sem forçar um <c>ConstraintName</c> que o Postgres não popula
-/// para erro de tipo.
+/// coluna <c>embedding vector(1024)</c> (0004_professional_embedding_dimension_1024.sql, MET-521 —
+/// era <c>vector(768)</c>) rejeita, pelo TIPO da coluna, qualquer vetor de dimensão diferente de
+/// 1024 — aqui não há constraint nomeada, então a asserção fica no que é observável (SqlState +
+/// trecho de mensagem), sem forçar um <c>ConstraintName</c> que o Postgres não popula para erro de
+/// tipo.
 ///
 /// Mesmo padrão de <see cref="SchemaConstraintsTests"/>: SQL explícito via Npgsql (nenhuma entidade
 /// EF — o mapeamento só chega na T3), dados sintéticos com sufixo <c>-embedding-provenance</c>,
-/// limpeza no <c>finally</c>. A dimensão 768 aqui é local ao teste (casada com a migration): não
+/// limpeza no <c>finally</c>. A dimensão 1024 aqui é local ao teste (casada com a migration): não
 /// referencia <c>EmbeddingDefaults.Dimensions</c> porque esse tipo só nasce na T5.
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("Category", "Integration")]
 public sealed class EmbeddingProvenanceTests(PostgresIntegrationFixture fixture)
 {
-    private const int EmbeddingDimensions = 768;
+    private const int EmbeddingDimensions = 1024;
 
     private static readonly string ValidEmbeddingLiteral = BuildVectorLiteral(EmbeddingDimensions, seedValue: 0.01);
     private static readonly string WrongDimensionEmbeddingLiteral = BuildVectorLiteral(dimensions: 3, seedValue: 0.5);
@@ -46,7 +47,7 @@ public sealed class EmbeddingProvenanceTests(PostgresIntegrationFixture fixture)
             slug,
             specialtyId,
             Embedding: ValidEmbeddingLiteral,
-            EmbeddingModel: "hashing:v1@768",
+            EmbeddingModel: "hashing:v1@1024",
             EmbeddingSourceHash: "9f2c3a7b1d0e4f5c6a8b9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7081920a1b2",
             EmbeddedAt: FixedEmbeddedAt);
     }
@@ -266,7 +267,7 @@ public sealed class EmbeddingProvenanceTests(PostgresIntegrationFixture fixture)
     // ---- dimensão do vetor: erro de TIPO, não de constraint nomeada ---------------------------
 
     /// <summary>
-    /// Dimensão errada é rejeitada pelo tipo <c>vector(768)</c> da coluna, antes mesmo de o CHECK
+    /// Dimensão errada é rejeitada pelo tipo <c>vector(1024)</c> da coluna, antes mesmo de o CHECK
     /// de procedência ser avaliado — não há <c>ConstraintName</c> porque não é violação de
     /// constraint nomeada, é erro de representação do tipo. Afirma só o que é observável: SqlState
     /// de erro de dados e a mensagem do pgvector citando as duas dimensões.
@@ -287,7 +288,7 @@ public sealed class EmbeddingProvenanceTests(PostgresIntegrationFixture fixture)
                 () => InsertProfessionalAsync(connection, row));
 
             Assert.Equal(PostgresErrorCodes.DataException, exception.SqlState);
-            Assert.Contains("768", exception.MessageText, StringComparison.Ordinal);
+            Assert.Contains("1024", exception.MessageText, StringComparison.Ordinal);
             Assert.Contains("not 3", exception.MessageText, StringComparison.Ordinal);
             Assert.Null(exception.ConstraintName);
         }

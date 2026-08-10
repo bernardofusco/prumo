@@ -185,7 +185,7 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => provider.EmbedAsync(["doc"], CancellationToken.None));
 
-        Assert.Contains("768", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1024", exception.Message, StringComparison.Ordinal);
         Assert.Contains("10", exception.Message, StringComparison.Ordinal);
     }
 

@@ -13,10 +13,11 @@ namespace Prumo.Api.Tests.Integration;
 /// <summary>
 /// Prova ING-04 (specs/features/met-478-modelagem-e-ingestao/spec.md): as entidades EF Core
 /// (<see cref="Specialty"/>, <see cref="Professional"/>) mapeadas em T3 fazem round-trip completo
-/// contra o schema real — incluindo a coluna <c>vector(768)</c> — e a ordenação por distância de
+/// contra o schema real — incluindo a coluna <c>vector(1024)</c> (MET-521; era <c>vector(768)</c>)
+/// — e a ordenação por distância de
 /// cosseno (<c>&lt;=&gt;</c>) funciona via EF Core, pelo binding Pgvector.EntityFrameworkCore
 /// (design.md §3.2 da MET-478). Nenhum <c>Database.Migrate()</c>/<c>EnsureCreated()</c> é chamado
-/// em lugar nenhum (ADR-001) — o schema já existe via 0002/0003, aplicado pelo
+/// em lugar nenhum (ADR-001) — o schema já existe via 0002/0003/0004, aplicado pelo
 /// <see cref="PostgresIntegrationFixture"/>.
 ///
 /// Cada teste relê com um <see cref="PrumoDbContext"/> NOVO, nunca o mesmo que inseriu: reler do
@@ -27,7 +28,7 @@ namespace Prumo.Api.Tests.Integration;
 [Trait("Category", "Integration")]
 public sealed class ProfessionalMappingTests(PostgresIntegrationFixture fixture)
 {
-    private const int EmbeddingDimensions = 768;
+    private const int EmbeddingDimensions = 1024;
 
     [Fact]
     public async Task InsertingProfessionalWithEmbedding_RoundTripsAllFieldsIncludingVector()
@@ -38,7 +39,7 @@ public sealed class ProfessionalMappingTests(PostgresIntegrationFixture fixture)
             Name = "Encanador Mapping Roundtrip",
         };
 
-        // Componentes DISTINTOS (não um vetor-base com 767 zeros): comparação elemento a elemento
+        // Componentes DISTINTOS (não um vetor-base com 1023 zeros): comparação elemento a elemento
         // detecta truncamento/zeramento mesmo num vetor esparso, mas só detecta DESORDENAÇÃO
         // (ex.: byte swap, offset trocado) se os valores permutados forem diferentes entre si —
         // permutar zeros entre zeros é invisível.
@@ -58,7 +59,7 @@ public sealed class ProfessionalMappingTests(PostgresIntegrationFixture fixture)
             Longitude = -43.9352,
             ServiceRadiusKm = 25,
             Embedding = new Vector(embeddingVector),
-            EmbeddingModel = "hashing:v1@768",
+            EmbeddingModel = "hashing:v1@1024",
             EmbeddingSourceHash = "9f2c3a7b1d0e4f5c6a8b9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7081920a1b2",
             EmbeddedAt = embeddedAt,
         };
@@ -93,7 +94,7 @@ public sealed class ProfessionalMappingTests(PostgresIntegrationFixture fixture)
             Assert.Equal(professional.ServiceRadiusKm, reloaded.ServiceRadiusKm);
 
             // O vetor em si: igualdade estrutural (Vector implementa IEquatable<Vector>) contra as
-            // 768 dimensões originais — não um "não é nulo", que não provaria a coluna vector(768).
+            // 1024 dimensões originais — não um "não é nulo", que não provaria a coluna vector(1024).
             Assert.NotNull(reloaded.Embedding);
             Assert.Equal(new Vector(embeddingVector), reloaded.Embedding);
             Assert.Equal(embeddingVector, reloaded.Embedding!.ToArray());
@@ -187,7 +188,7 @@ public sealed class ProfessionalMappingTests(PostgresIntegrationFixture fixture)
         Longitude = -43.9352,
         ServiceRadiusKm = 25,
         Embedding = new Vector(embedding),
-        EmbeddingModel = "hashing:v1@768",
+        EmbeddingModel = "hashing:v1@1024",
         EmbeddingSourceHash = $"hash-{label}-professional-mapping-cosine-order",
         EmbeddedAt = new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero),
     };
@@ -200,7 +201,7 @@ public sealed class ProfessionalMappingTests(PostgresIntegrationFixture fixture)
     }
 
     /// <summary>
-    /// 768 componentes DISTINTOS entre si (<c>(i+1)/1000</c>), ao contrário de
+    /// 1024 componentes DISTINTOS entre si (<c>(i+1)/1000</c>), ao contrário de
     /// <see cref="BuildBasisVector"/> — usado onde o teste precisa detectar desordenação/permutação
     /// dos componentes, não só truncamento ou zeramento (ver comentário no round-trip acima).
     /// </summary>

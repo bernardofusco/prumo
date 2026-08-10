@@ -43,7 +43,7 @@ function successResponse(overrides: Partial<SearchResponse> = {}): SearchResult 
     data: {
       query: 'vazamento no banheiro',
       geo: { applied: true, radiusKm: null },
-      embedding: { mode: 'precomputed', model: 'openai:text-embedding-3-small@768' },
+      embedding: { mode: 'precomputed', model: 'openai:text-embedding-3-small@1024' },
       ranking: RANKING,
       totalCandidates: 1,
       results: [
@@ -258,7 +258,7 @@ describe('App — tela de busca', () => {
 
   it('mode: degraded — aviso visível junto dos resultados', async () => {
     fetchSearchMock.mockResolvedValue(
-      successResponse({ embedding: { mode: 'degraded', model: 'hashing:v1@768' } }),
+      successResponse({ embedding: { mode: 'degraded', model: 'hashing:v1@1024' } }),
     )
     render(<App />)
 

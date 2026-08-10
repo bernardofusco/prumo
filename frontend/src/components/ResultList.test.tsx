@@ -10,7 +10,7 @@ function baseResponse(overrides: Partial<SearchResponse> = {}): SearchResponse {
   return {
     query: 'vazamento no banheiro',
     geo: { applied: true, radiusKm: 25 },
-    embedding: { mode: 'precomputed', model: 'openai:text-embedding-3-small@768' },
+    embedding: { mode: 'precomputed', model: 'openai:text-embedding-3-small@1024' },
     ranking: RANKING,
     totalCandidates: 1,
     results: [
@@ -69,7 +69,7 @@ describe('ResultList', () => {
   })
 
   it('mode: degraded — mostra o aviso de modo degradado', () => {
-    render(<ResultList response={baseResponse({ embedding: { mode: 'degraded', model: 'hashing:v1@768' } })} />)
+    render(<ResultList response={baseResponse({ embedding: { mode: 'degraded', model: 'hashing:v1@1024' } })} />)
 
     expect(screen.getByText(/Modo degradado/)).toBeDefined()
   })

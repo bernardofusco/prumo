@@ -191,7 +191,7 @@ public sealed class SearchEndpointTests(PostgresIntegrationFixture fixture)
             var root = document.RootElement;
 
             Assert.Equal("precomputed", root.GetProperty("embedding").GetProperty("mode").GetString());
-            Assert.Equal("test-model@768", root.GetProperty("embedding").GetProperty("model").GetString());
+            Assert.Equal("test-model@1024", root.GetProperty("embedding").GetProperty("model").GetString());
         }
         finally
         {
@@ -325,7 +325,7 @@ public sealed class SearchEndpointTests(PostgresIntegrationFixture fixture)
         var hash = EmbeddingDocument.Hash(EmbeddingDocument.For(queryText));
         var fixture = new
         {
-            model = "test-model@768",
+            model = "test-model@1024",
             dimensions = EmbeddingDefaults.Dimensions,
             hashAlgorithm = "sha256",
             vectors = new[]
