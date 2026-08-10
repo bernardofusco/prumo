@@ -40,7 +40,7 @@ prumo/
 ```
 
 > **Estado atual:** fundação do M0 concluída; o M1 entregou modelagem e ingestão (MET-478) — schema
-> de domínio (`specialties`, `professionals`, coluna vetorial `embedding vector(768)` com procedência
+> de domínio (`specialties`, `professionals`, coluna vetorial `embedding vector(1024)` com procedência
 > auditável), corpus sintético (~150 profissionais) e comando de ingestão idempotente
 > (`src/Prumo.Seed`) — e a **busca com ranking híbrido** (MET-479): endpoint `GET /api/search` +
 > `GET /api/search/options`, a função pura de ranking (`Search/Ranking/HybridRanker`), a recuperação
@@ -82,14 +82,15 @@ M1 (`specialties`, `professionals` e a coluna vetorial):
 ```sh
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/0002_specialties_and_professionals.sql'
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/0003_professional_embeddings.sql'
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/0004_professional_embedding_dimension_1024.sql'
 ```
 
 (as variáveis `$POSTGRES_USER`/`$POSTGRES_DB` precisam ser expandidas **dentro** do container —
 onde o compose as injeta via `environment:` — por isso o `sh -c` envolvendo o `psql`; expandi-las
-no shell do host não funciona, pois o host não tem essas variáveis.) Ambas as migrations são
+no shell do host não funciona, pois o host não tem essas variáveis.) As três migrations são
 idempotentes no sentido operacional — reaplicá-las num banco que já as tem não falha nem duplica
 constraint (provado por `tests/Prumo.Api.Tests/Integration/MigrationIdempotencyTests.cs`), então
-rodar os dois comandos acima também é seguro se você não tiver certeza do que já foi aplicado.
+rodar os três comandos acima também é seguro se você não tiver certeza do que já foi aplicado.
 
 **Resetar o banco do zero** (descarta os dados do container local — sempre sintéticos, nunca dado
 real):

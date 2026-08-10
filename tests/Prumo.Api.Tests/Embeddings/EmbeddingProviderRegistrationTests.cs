@@ -55,7 +55,7 @@ public sealed class EmbeddingProviderRegistrationTests : IDisposable
         var provider = serviceProvider.GetRequiredService<IEmbeddingProvider>();
 
         var precomputed = Assert.IsType<PrecomputedEmbeddingProvider>(provider);
-        Assert.Equal("openai:text-embedding-3-small@768", precomputed.ModelId);
+        Assert.Equal("openai:text-embedding-3-small@1024", precomputed.ModelId);
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class EmbeddingProviderRegistrationTests : IDisposable
     {
         var fixture = new
         {
-            model = "openai:text-embedding-3-small@768",
+            model = "openai:text-embedding-3-small@1024",
             dimensions = EmbeddingDefaults.Dimensions,
             hashAlgorithm = "sha256",
             vectors = new[]

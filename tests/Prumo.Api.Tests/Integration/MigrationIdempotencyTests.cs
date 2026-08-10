@@ -13,14 +13,23 @@ namespace Prumo.Api.Tests.Integration;
 /// automaticamente idempotente pela sintaxe SQL usada, então é a que mais precisa de uma asserção
 /// automatizada em vez de verificação manual (spec/features/met-478-modelagem-e-ingestao/spec.md,
 /// seção "Concorrência e Idempotência": "0002/0003 são idempotentes... reaplicação segura em banco de
-/// dev já existente").
+/// dev já existente"). A <c>0004</c> (MET-521, dimensão 768 -> 1024) segue o mesmo padrão: o
+/// <c>UPDATE ... WHERE embedding IS NOT NULL</c> não casa linha nenhuma na segunda passada (os
+/// vetores já foram zerados na primeira), e <c>ALTER COLUMN ... TYPE vector(1024)</c> é aceito pelo
+/// Postgres mesmo quando a coluna já está nesse tipo.
 ///
 /// Abordagem escolhida: ler o SQL real de cada migration do disco (sem duplicar o conteúdo da
 /// migration no código de teste) e reexecutá-lo via uma conexão Npgsql nova, contra o mesmo banco que
 /// o container já inicializou. Nenhum destes testes limpa dado — a reaplicação só toca estrutura
 /// (tabela/coluna/índice/constraint), nunca linha, então é segura mesmo depois de outras classes desta
 /// collection já terem inserido dados (<see cref="IntegrationCollection"/>: um único container
-/// compartilhado por toda a suíte).
+/// compartilhado por toda a suíte). **Exceção declarada:** a reaplicação da <c>0004</c> abaixo FAZ
+/// <c>UPDATE ... SET embedding = NULL</c> nas linhas do container compartilhado que tiverem vetor —
+/// é o próprio corpo da migration, não um efeito colateral do teste. É auto-curável (qualquer
+/// consumidor que precise de vetor reexecuta o seed, que é idempotente) e não quebra nenhum teste
+/// desta suíte (nenhum outro arquivo depende de um vetor específico sobreviver entre classes), mas é
+/// um efeito GLOBAL numa suíte cuja convenção é limpar no <c>finally</c> — registrado aqui de
+/// propósito, não escondido.
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("Category", "Integration")]
@@ -63,6 +72,42 @@ public sealed class MigrationIdempotencyTests(PostgresIntegrationFixture fixture
 
         var constraintCount = await CountProvenanceConstraintAsync();
         Assert.Equal(1, constraintCount);
+    }
+
+    /// <summary>
+    /// MET-521: reaplica <c>0004_professional_embedding_dimension_1024.sql</c> DUAS vezes seguidas
+    /// (mesmo padrão de <see cref="ReapplyingEmbeddingsMigration_DoesNotThrow_AndDoesNotDuplicateProvenanceConstraint"/>)
+    /// e confirma, contra <c>information_schema</c>, que a coluna continua exatamente
+    /// <c>vector(1024)</c> depois das duas reaplicações — não só "não lançou".
+    /// </summary>
+    [Fact]
+    public async Task ReapplyingEmbeddingDimensionMigration_DoesNotThrow_AndColumnStaysVector1024()
+    {
+        var firstReapplyException = await ReapplyMigrationAsync("0004_professional_embedding_dimension_1024.sql");
+        Assert.Null(firstReapplyException);
+
+        var secondReapplyException = await ReapplyMigrationAsync("0004_professional_embedding_dimension_1024.sql");
+        Assert.Null(secondReapplyException);
+
+        var embeddingColumnType = await ReadEmbeddingColumnTypeAsync();
+        Assert.Equal("vector(1024)", embeddingColumnType);
+    }
+
+    private async Task<string?> ReadEmbeddingColumnTypeAsync()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT format_type(atttypid, atttypmod)
+            FROM pg_attribute
+            WHERE attrelid = 'public.professionals'::regclass
+              AND attname = 'embedding'
+              AND NOT attisdropped;
+            """;
+
+        return (string?)await command.ExecuteScalarAsync();
     }
 
     private async Task<Exception?> ReapplyMigrationAsync(string migrationFileName)

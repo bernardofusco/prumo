@@ -14,7 +14,7 @@ public interface IEmbeddingProvider
 {
     /// <summary>
     /// Identificador gravado em <c>professionals.embedding_model</c> — inclui modelo E dimensão,
-    /// ex.: <c>"openai:text-embedding-3-small@768"</c>, <c>"hashing:v1@768"</c>. É o valor que
+    /// ex.: <c>"openai:text-embedding-3-small@1024"</c>, <c>"hashing:v1@1024"</c>. É o valor que
     /// <see cref="EmbeddingDecision.NeedsEmbedding"/> compara contra o modelo gravado por linha
     /// para detectar troca de provedor.
     /// </summary>

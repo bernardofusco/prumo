@@ -150,7 +150,7 @@ public sealed class SearchEndpointErrorResponseTests
             .Select((text, index) => new VectorFixture(Slug: null, Id: $"gs-{index:00}", Text: text, SourceHash: $"hash-{index}", Embedding: MakeVector()))
             .ToList();
 
-        var fixture = new ArtifactFixture("openai:text-embedding-3-small@768", EmbeddingDefaults.Dimensions, "sha256", vectors);
+        var fixture = new ArtifactFixture("openai:text-embedding-3-small@1024", EmbeddingDefaults.Dimensions, "sha256", vectors);
 
         var path = Path.Combine(Path.GetTempPath(), $"prumo-search-endpoint-error-test-{Guid.NewGuid():N}.json");
         File.WriteAllText(path, JsonSerializer.Serialize(fixture, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));

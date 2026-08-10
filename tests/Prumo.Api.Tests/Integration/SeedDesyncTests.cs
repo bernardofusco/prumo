@@ -185,7 +185,7 @@ public sealed class SeedDesyncTests(PostgresIntegrationFixture fixture)
     {
         var artifact = new
         {
-            model = "openai:text-embedding-3-small@768",
+            model = "openai:text-embedding-3-small@1024",
             dimensions = EmbeddingDefaults.Dimensions,
             hashAlgorithm = "sha256",
             vectors = new[]

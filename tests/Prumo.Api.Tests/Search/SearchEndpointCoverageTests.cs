@@ -69,7 +69,7 @@ public sealed class SearchEndpointCoverageTests
     public async Task GetSearch_PropagatesTheSameRequestCancellationToken_ToTheEmbedderAndToTheDatabaseQuery()
     {
         var embedder = new FakeSearchQueryEmbedder(
-            new QueryEmbeddingResult(new Vector(MakeVector()), QueryEmbeddingMode.Degraded, "hashing:v1@768"));
+            new QueryEmbeddingResult(new Vector(MakeVector()), QueryEmbeddingMode.Degraded, "hashing:v1@1024"));
         var searchQuery = new RecordingProfessionalSearchQuery();
 
         await using var host = await SearchEndpointTestHost.StartAsync(embedder, searchQuery, PrecomputedEmbeddingStore.Empty());
@@ -114,7 +114,7 @@ public sealed class SearchEndpointCoverageTests
             DistanceKm: null);
 
         var embedder = new FakeSearchQueryEmbedder(
-            new QueryEmbeddingResult(new Vector(MakeVector()), QueryEmbeddingMode.Degraded, "hashing:v1@768"));
+            new QueryEmbeddingResult(new Vector(MakeVector()), QueryEmbeddingMode.Degraded, "hashing:v1@1024"));
         var searchQuery = new RecordingProfessionalSearchQuery([candidate]);
 
         await using var host = await SearchEndpointTestHost.StartAsync(
@@ -168,7 +168,7 @@ public sealed class SearchEndpointCoverageTests
     public async Task GetSearch_Returns200_WithEmbeddingModeProvider_WhenTheChainUsedTheExternalProvider()
     {
         var embedder = new FakeSearchQueryEmbedder(
-            new QueryEmbeddingResult(new Vector(MakeVector()), QueryEmbeddingMode.Provider, "openai-compatible:test-model@768"));
+            new QueryEmbeddingResult(new Vector(MakeVector()), QueryEmbeddingMode.Provider, "openai-compatible:test-model@1024"));
         var searchQuery = new RecordingProfessionalSearchQuery();
 
         await using var host = await SearchEndpointTestHost.StartAsync(embedder, searchQuery, PrecomputedEmbeddingStore.Empty());
@@ -183,7 +183,7 @@ public sealed class SearchEndpointCoverageTests
         var embedding = document.RootElement.GetProperty("embedding");
 
         Assert.Equal("provider", embedding.GetProperty("mode").GetString());
-        Assert.Equal("openai-compatible:test-model@768", embedding.GetProperty("model").GetString());
+        Assert.Equal("openai-compatible:test-model@1024", embedding.GetProperty("model").GetString());
     }
 
     private static float[] MakeVector() => Enumerable.Repeat(0.1f, EmbeddingDefaults.Dimensions).ToArray();

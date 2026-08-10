@@ -430,7 +430,7 @@ public sealed class SearchOptionsEndpointTests(PostgresIntegrationFixture fixtur
     {
         var fixtureArtifact = new
         {
-            model = "test-model@768",
+            model = "test-model@1024",
             dimensions = EmbeddingDefaults.Dimensions,
             hashAlgorithm = "sha256",
             vectors = new[]
@@ -477,7 +477,7 @@ public sealed class SearchOptionsEndpointTests(PostgresIntegrationFixture fixtur
     {
         var fixtureArtifact = new
         {
-            model = "test-model@768",
+            model = "test-model@1024",
             dimensions = EmbeddingDefaults.Dimensions,
             hashAlgorithm = "sha256",
             vectors = texts.Select((text, index) => new

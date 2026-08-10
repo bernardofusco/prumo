@@ -32,7 +32,7 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
     public void Load_IndexesVectorsBySourceHash_AndTryGetVectorResolvesThem()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            Model: "openai:text-embedding-3-small@768",
+            Model: "openai:text-embedding-3-small@1024",
             Dimensions: EmbeddingDefaults.Dimensions,
             HashAlgorithm: "sha256",
             Vectors:
@@ -56,14 +56,14 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
     public void Load_ReadsModelIdFromTheModelFieldOfTheFile()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            Model: "openai:text-embedding-3-small@768",
+            Model: "openai:text-embedding-3-small@1024",
             Dimensions: EmbeddingDefaults.Dimensions,
             HashAlgorithm: "sha256",
             Vectors: [new VectorFixture("slug-1", "hash-1", MakeVector(0.1f))]));
 
         var store = PrecomputedEmbeddingStore.Load([path]);
 
-        Assert.Equal("openai:text-embedding-3-small@768", store.ModelId);
+        Assert.Equal("openai:text-embedding-3-small@1024", store.ModelId);
     }
 
     /// <summary>
@@ -76,7 +76,7 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
     public void TryGetVector_NeverThrows_AndReturnsFalse_WhenTheHashIsNotPresentInAnyLoadedArtifact()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            Model: "openai:text-embedding-3-small@768",
+            Model: "openai:text-embedding-3-small@1024",
             Dimensions: EmbeddingDefaults.Dimensions,
             HashAlgorithm: "sha256",
             Vectors: [new VectorFixture("slug-1", "hash-1", MakeVector(0.1f))]));
@@ -93,7 +93,7 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
     public void TryGetVector_ThrowsOnNullSourceHash()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            Model: "m@768", Dimensions: EmbeddingDefaults.Dimensions, HashAlgorithm: "sha256",
+            Model: "m@1024", Dimensions: EmbeddingDefaults.Dimensions, HashAlgorithm: "sha256",
             Vectors: [new VectorFixture("slug-1", "hash-1", MakeVector(0.1f))]));
         var store = PrecomputedEmbeddingStore.Load([path]);
 
@@ -109,7 +109,7 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
     [Fact]
     public void Load_MergesVectorsFromMultiplePaths_IntoASingleLookup()
     {
-        const string sharedModel = "openai:text-embedding-3-small@768";
+        const string sharedModel = "openai:text-embedding-3-small@1024";
         var corpusPath = WriteArtifact(new ArtifactFixture(
             sharedModel, EmbeddingDefaults.Dimensions, "sha256",
             [new VectorFixture("professional-1", "corpus-hash", MakeVector(0.1f))]));
@@ -161,38 +161,39 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
     }
 
     /// <summary>
-    /// "Arquivo com dimensions != 768 ... ⇒ erro na carga, não no meio do lote" (DoD da T6): o
-    /// campo <c>dimensions</c> DECLARADO no cabeçalho do artefato é validado por si só, mesmo
-    /// quando todo vetor individual já tem o tamanho canônico (768) — de propósito: os vetores
-    /// aqui têm 768 posições (<see cref="MakeVector"/>), então o ÚNICO guarda capaz de derrubar
-    /// este teste é o do campo <c>dimensions</c> (isolado da checagem por vetor, que passaria).
-    /// Sem isto, um artefato que declarasse <c>"dimensions": 1536</c> com vetores de 768 passaria
-    /// batido — dado inconsistente sobre o próprio formato, mesmo que cada vetor esteja correto.
+    /// "Arquivo com dimensions != 1024 ... ⇒ erro na carga, não no meio do lote" (DoD da T6,
+    /// dimensão revista na MET-521): o campo <c>dimensions</c> DECLARADO no cabeçalho do artefato é
+    /// validado por si só, mesmo quando todo vetor individual já tem o tamanho canônico (1024) — de
+    /// propósito: os vetores aqui têm 1024 posições (<see cref="MakeVector"/>), então o ÚNICO guarda
+    /// capaz de derrubar este teste é o do campo <c>dimensions</c> (isolado da checagem por vetor,
+    /// que passaria). Sem isto, um artefato que declarasse <c>"dimensions": 1536</c> com vetores de
+    /// 1024 passaria batido — dado inconsistente sobre o próprio formato, mesmo que cada vetor
+    /// esteja correto.
     /// </summary>
     [Fact]
     public void Load_ThrowsAnActionableError_WhenDeclaredDimensionsIsNotTheCanonicalValue()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            Model: "openai:text-embedding-3-small@768",
+            Model: "openai:text-embedding-3-small@1024",
             Dimensions: 1536,
             HashAlgorithm: "sha256",
             Vectors: [new VectorFixture("slug-1", "hash-1", MakeVector(0.1f))]));
 
         var exception = Assert.Throws<InvalidOperationException>(() => PrecomputedEmbeddingStore.Load([path]));
 
-        Assert.Contains("768", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1024", exception.Message, StringComparison.Ordinal);
         Assert.Contains("1536", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// Ponta complementar do teste acima: cabeçalho correto (768), mas UM vetor específico tem
+    /// Ponta complementar do teste acima: cabeçalho correto (1024), mas UM vetor específico tem
     /// tamanho errado — também falha na carga, citando o sourceHash do vetor incorreto.
     /// </summary>
     [Fact]
     public void Load_ThrowsAnActionableError_WhenASpecificVectorHasTheWrongLength()
     {
         var path = WriteArtifact(new ArtifactFixture(
-            Model: "openai:text-embedding-3-small@768",
+            Model: "openai:text-embedding-3-small@1024",
             Dimensions: EmbeddingDefaults.Dimensions,
             HashAlgorithm: "sha256",
             Vectors:
@@ -204,14 +205,14 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
         var exception = Assert.Throws<InvalidOperationException>(() => PrecomputedEmbeddingStore.Load([path]));
 
         Assert.Contains("hash-bad", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("768", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1024", exception.Message, StringComparison.Ordinal);
         Assert.Contains("100", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Load_ThrowsAnActionableError_WhenTheSameSourceHashAppearsTwice()
     {
-        const string sharedModel = "openai:text-embedding-3-small@768";
+        const string sharedModel = "openai:text-embedding-3-small@1024";
         var firstPath = WriteArtifact(new ArtifactFixture(
             sharedModel, EmbeddingDefaults.Dimensions, "sha256",
             [new VectorFixture("slug-1", "duplicated-hash", MakeVector(0.1f))]));
@@ -229,17 +230,17 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
     public void Load_ThrowsAnActionableError_WhenFilesDeclareDifferentModels()
     {
         var firstPath = WriteArtifact(new ArtifactFixture(
-            "openai:text-embedding-3-small@768", EmbeddingDefaults.Dimensions, "sha256",
+            "openai:text-embedding-3-small@1024", EmbeddingDefaults.Dimensions, "sha256",
             [new VectorFixture("slug-1", "hash-1", MakeVector(0.1f))]));
         var secondPath = WriteArtifact(new ArtifactFixture(
-            "local:some-other-model@768", EmbeddingDefaults.Dimensions, "sha256",
+            "local:some-other-model@1024", EmbeddingDefaults.Dimensions, "sha256",
             [new VectorFixture("slug-2", "hash-2", MakeVector(0.2f))]));
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => PrecomputedEmbeddingStore.Load([firstPath, secondPath]));
 
-        Assert.Contains("openai:text-embedding-3-small@768", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("local:some-other-model@768", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("openai:text-embedding-3-small@1024", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("local:some-other-model@1024", exception.Message, StringComparison.Ordinal);
     }
 
     private static float[] MakeVector(float value) => Enumerable.Repeat(value, EmbeddingDefaults.Dimensions).ToArray();

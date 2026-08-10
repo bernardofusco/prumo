@@ -50,13 +50,15 @@ public sealed class ProfessionalConfiguration : IEntityTypeConfiguration<Profess
         builder.Property(professional => professional.ServiceRadiusKm)
             .HasColumnName("service_radius_km");
 
-        // Dimensão 768 casada com a coluna vector(768) de 0003_professional_embeddings.sql (D3 da
-        // spec MET-478) — os dois precisam mudar juntos; é exatamente o defeito que a ADR-001
-        // pede para evitar. Tipo Pgvector.Vector habilitado via UseVector() em Program.cs
-        // (Pgvector.EntityFrameworkCore, design.md §3.2).
+        // Dimensão 1024 casada com a coluna vector(1024) de
+        // 0004_professional_embedding_dimension_1024.sql (D3 da spec MET-478, revista em MET-521 —
+        // era 768 até a medição mostrar que o modelo que resolve pt-BR produz 1024 nativamente) — os
+        // dois precisam mudar juntos; é exatamente o defeito que a ADR-001 pede para evitar. Tipo
+        // Pgvector.Vector habilitado via UseVector() em Program.cs (Pgvector.EntityFrameworkCore,
+        // design.md §3.2).
         builder.Property(professional => professional.Embedding)
             .HasColumnName("embedding")
-            .HasColumnType("vector(768)");
+            .HasColumnType("vector(1024)");
 
         builder.Property(professional => professional.EmbeddingModel)
             .HasColumnName("embedding_model");

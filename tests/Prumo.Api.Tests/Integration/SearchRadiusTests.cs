@@ -47,7 +47,7 @@ namespace Prumo.Api.Tests.Integration;
 [Trait("Category", "Integration")]
 public sealed class SearchRadiusTests(PostgresIntegrationFixture fixture)
 {
-    private const int EmbeddingDimensions = 768;
+    private const int EmbeddingDimensions = 1024;
 
     /// <summary>Mesmo valor que <c>SELECT earth();</c> devolve no Postgres real (ver <c>EarthDistanceTests</c>).</summary>
     private const double EarthRadiusMeters = 6_378_168.0;
@@ -261,7 +261,7 @@ public sealed class SearchRadiusTests(PostgresIntegrationFixture fixture)
             Longitude = longitude,
             ServiceRadiusKm = serviceRadiusKm,
             Embedding = new Vector(BuildBasisVector(index: 0)),
-            EmbeddingModel = "hashing:v1@768",
+            EmbeddingModel = "hashing:v1@1024",
             EmbeddingSourceHash = $"hash-{label}-search-radius",
             EmbeddedAt = new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero),
         };

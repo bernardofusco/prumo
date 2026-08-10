@@ -109,8 +109,8 @@ public sealed class SearchQueryEmbeddingRegistrationTests : IDisposable
     [Fact]
     public void AddSearchQueryEmbedding_WithConfiguredPathsDeclaringDivergentModels_StillThrows()
     {
-        var firstPath = WriteArtifact(model: "openai:text-embedding-3-small@768");
-        var secondPath = WriteArtifact(model: "openai:text-embedding-3-large@768");
+        var firstPath = WriteArtifact(model: "openai:text-embedding-3-small@1024");
+        var secondPath = WriteArtifact(model: "openai:text-embedding-3-large@1024");
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -127,8 +127,8 @@ public sealed class SearchQueryEmbeddingRegistrationTests : IDisposable
 
         var exception = Assert.Throws<InvalidOperationException>(() => services.AddSearchQueryEmbedding(configuration));
 
-        Assert.Contains("openai:text-embedding-3-small@768", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("openai:text-embedding-3-large@768", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("openai:text-embedding-3-small@1024", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("openai:text-embedding-3-large@1024", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

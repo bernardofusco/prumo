@@ -16,8 +16,8 @@ public sealed class NeedsEmbeddingTests
 {
     private const string CurrentHash = "current-document-hash";
     private const string OtherHash = "different-document-hash";
-    private const string ConfiguredModel = "hashing:v1@768";
-    private const string OtherModel = "openai:text-embedding-3-small@768";
+    private const string ConfiguredModel = "hashing:v1@1024";
+    private const string OtherModel = "openai:text-embedding-3-small@1024";
 
     /// <summary>
     /// Tabela-verdade de design.md §4.3: verdadeiro quando NÃO há vetor, OU o hash gravado difere

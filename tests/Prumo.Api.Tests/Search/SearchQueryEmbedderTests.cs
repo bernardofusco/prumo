@@ -36,7 +36,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     [Fact]
     public void Constructor_ThrowsOnNullStore()
     {
-        var provider = new FakeEmbeddingProvider("model:v1@768");
+        var provider = new FakeEmbeddingProvider("model:v1@1024");
 
         Assert.Throws<ArgumentNullException>(
             () => new SearchQueryEmbedder(null!, provider, EmbeddingProviderRegistration.HashingProviderName));
@@ -58,7 +58,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     public void Constructor_ThrowsOnMissingConfiguredProviderName(string? configuredProviderName)
     {
         var store = LoadEmptyStore();
-        var provider = new FakeEmbeddingProvider("model:v1@768");
+        var provider = new FakeEmbeddingProvider("model:v1@1024");
 
         Assert.ThrowsAny<ArgumentException>(
             () => new SearchQueryEmbedder(store, provider, configuredProviderName!));
@@ -67,7 +67,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     [Fact]
     public async Task EmbedAsync_ThrowsOnNullQueryText()
     {
-        var embedder = CreateEmbedder(LoadEmptyStore(), new FakeEmbeddingProvider("model:v1@768"), EmbeddingProviderRegistration.HashingProviderName);
+        var embedder = CreateEmbedder(LoadEmptyStore(), new FakeEmbeddingProvider("model:v1@1024"), EmbeddingProviderRegistration.HashingProviderName);
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => embedder.EmbedAsync(null!, CancellationToken.None));
     }
@@ -131,7 +131,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
         const string queryText = "meu portão não abre";
         var expectedVector = MakeVector(0.77f);
         var store = LoadEmptyStore();
-        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@768", vectorToReturn: expectedVector);
+        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@1024", vectorToReturn: expectedVector);
 
         var embedder = CreateEmbedder(store, provider, EmbeddingProviderRegistration.OpenAiCompatibleProviderName);
 
@@ -151,7 +151,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
         const string queryText = "instalação de tomada nova";
         var expectedVector = MakeVector(0.33f);
         var store = LoadEmptyStore();
-        var provider = new FakeEmbeddingProvider("hashing:v1@768", vectorToReturn: expectedVector);
+        var provider = new FakeEmbeddingProvider("hashing:v1@1024", vectorToReturn: expectedVector);
 
         var embedder = CreateEmbedder(store, provider, EmbeddingProviderRegistration.HashingProviderName);
 
@@ -195,7 +195,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     {
         var store = LoadEmptyStore();
         var provider = new FakeEmbeddingProvider(
-            "hashing:v1@768",
+            "hashing:v1@1024",
             exceptionToThrow: new InvalidOperationException(
                 "Documento não produziu nenhum token de >= 3 caracteres após normalização."));
 
@@ -257,7 +257,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     public async Task EmbedAsync_PropagatesCancellation_WithoutWrappingIt_WhenTheProviderThrowsOperationCanceled()
     {
         var store = LoadEmptyStore();
-        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@768", exceptionToThrow: new OperationCanceledException());
+        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@1024", exceptionToThrow: new OperationCanceledException());
         var embedder = CreateEmbedder(store, provider, EmbeddingProviderRegistration.OpenAiCompatibleProviderName);
 
         var exception = await Record.ExceptionAsync(() => embedder.EmbedAsync("qualquer coisa", CancellationToken.None));
@@ -318,7 +318,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
             "formato inesperado",
             new InvalidOperationException(
                 "Resposta em formato inesperado do provedor de embeddings openai-compatible em " +
-                "'http://fake-embeddings.test/v1/embeddings' (esperava 'embedding' de 768 dimensões).",
+                "'http://fake-embeddings.test/v1/embeddings' (esperava 'embedding' de 1024 dimensões).",
                 new Exception($"payload capturado por engano: {LeakCanary}")),
         };
     }
@@ -329,7 +329,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
         string expectedSafeFragment, Exception providerFailure)
     {
         var store = LoadEmptyStore();
-        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@768", exceptionToThrow: providerFailure);
+        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@1024", exceptionToThrow: providerFailure);
         var embedder = CreateEmbedder(store, provider, EmbeddingProviderRegistration.OpenAiCompatibleProviderName);
 
         var exception = await Assert.ThrowsAsync<SearchQueryEmbeddingProviderException>(
@@ -354,7 +354,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     public async Task EmbedAsync_WrapsAsATypedException_WhenTheExternalProviderReturnsFewerVectorsThanRequested()
     {
         var store = LoadEmptyStore();
-        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@768", returnEmptyList: true);
+        var provider = new FakeEmbeddingProvider("openai-compatible:test-model@1024", returnEmptyList: true);
         var embedder = CreateEmbedder(store, provider, EmbeddingProviderRegistration.OpenAiCompatibleProviderName);
 
         var exception = await Assert.ThrowsAsync<SearchQueryEmbeddingProviderException>(
@@ -390,7 +390,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     private PrecomputedEmbeddingStore LoadStoreWithHashedEntry(string sourceHash, float[] vector)
     {
         var fixture = new ArtifactFixture(
-            Model: "openai:text-embedding-3-small@768",
+            Model: "openai:text-embedding-3-small@1024",
             Dimensions: EmbeddingDefaults.Dimensions,
             HashAlgorithm: "sha256",
             Vectors: [new VectorFixture(sourceHash, vector)]);
@@ -456,7 +456,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     /// </summary>
     private sealed class NeverCalledEmbeddingProvider : IEmbeddingProvider
     {
-        public string ModelId => "never-called:v0@768";
+        public string ModelId => "never-called:v0@1024";
 
         public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> documents, CancellationToken cancellationToken) =>
             throw new InvalidOperationException(
