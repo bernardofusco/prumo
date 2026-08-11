@@ -171,9 +171,10 @@ public sealed class RankingOptionsValidationTests
     /// <summary>
     /// Fim a fim, com o <c>Program.cs</c> e o <c>appsettings.json</c> REAIS (não uma configuração
     /// fabricada no teste): prova que o registro em <c>Program.cs</c> (uma linha,
-    /// <c>AddRankingOptions</c>) e os valores provisórios de <c>Ranking</c> — inclusive os
-    /// comentários <c>//</c> no JSON — inicializam a API de ponta a ponta sem lançar. Mesmo caminho
-    /// de host em memória que <c>HealthEndpointTests</c> (M0) usa.
+    /// <c>AddRankingOptions</c>) e os valores MEDIDOS de <c>Ranking</c> (T11 reexecutada, MET-524;
+    /// <c>project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md</c> no repo do
+    /// harness) — inclusive os comentários <c>//</c> no JSON — inicializam a API de ponta a ponta sem
+    /// lançar. Mesmo caminho de host em memória que <c>HealthEndpointTests</c> (M0) usa.
     /// </summary>
     [Fact]
     public async Task WebApplicationFactory_ComOProgramETAppsettingsJsonReais_InicializaSemLancarExcecao()

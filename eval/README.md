@@ -1,5 +1,15 @@
 # `eval/` — a régua do M1 (busca com ranking híbrido)
 
+> **Piso `L2` revisado (2026-08-11).** Este documento é lido de forma sequencial e várias seções
+> abaixo (escritas ANTES da medição, de propósito) tratam `meanPrecision@5 ≥ 0,70` como o piso
+> vigente — e ficam exatamente como foram escritas, intactas, porque reescrever análise pré-medição
+> para casar com o resultado seria o problema que este projeto existe para evitar. **O piso vigente
+> hoje é `L2 ≥ 0,40`**, ratificado via
+> `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` (repo do harness) depois de a
+> T11 reexecutada medir que o melhor ponto do grid elegível a L1/L3 fica em `meanPrecision@5 = 0,41`.
+> Racional completo, número antigo, número novo e o porquê: seção "Piso `L2` baixado de 0,70 para
+> 0,40 (ADR-005, 2026-08-11)", mais abaixo.
+
 Este diretório é o instrumento de medição da MET-479 (`specs/features/met-479-busca-ranking-hibrido/`,
 seção **"Medição do Case"**, normativa). Ele existe para uma frase só: *"vazamento no banheiro"
 encontra encanador sem a palavra "encanador" aparecer em lugar nenhum* — e esse README documenta como
@@ -195,6 +205,12 @@ o teto) alcançar 0,70, as 15 consultas sem localização precisam mediar `preci
 seus tetos (0,40/0,40/0,20/0,20/0,20 = 1,40 no total). Isso não é um piso novo — é a mesma régua L2 da
 spec, só com a aritmética explícita para que a T11 saiba, antes de medir, onde a margem real está.
 
+> **Nota de encaminhamento:** esta seção inteira é pré-medição e trata 0,70 como o piso vigente de
+> propósito — preservada intacta. A T11 mediu que a margem projetada aqui não se concretizou
+> (`meanPrecision@5` ficou em 0,39–0,41 em todo o grid, não perto de 0,84 nas consultas sem
+> localização); o piso vigente hoje é `L2 ≥ 0,40` (ADR-005) — ver "Piso `L2` baixado de 0,70 para 0,40"
+> mais abaixo para a medição real e o porquê.
+
 ## Ordem de diagnóstico se L2 falhar (fixada antes de qualquer medição)
 
 Declarada agora, **antes** de a T11 rodar o eval contra vetores reais, para que uma medição abaixo do
@@ -238,40 +254,285 @@ de correspondência literal de palavra (o inverso exato do achado 1). Não há p
 aqui (`≤ 0,45` ou qualquer outro valor) — isso seria régua nova, e régua é ADR + decisão do dono; os
 números completos do baseline lexical, lado a lado com só-semântica e híbrido, são publicados pela T11.
 
-Dito isso, como o cálculo do baseline lexical é determinístico sobre texto já congelado nesta revisão
-(não depende de nenhum provedor de embeddings), o número já pode ser medido hoje, sem vetor nenhum:
-contra o golden set desta revisão, o baseline lexical erra 9 das 20 consultas no top-3
-(`hitRate@3 = 0,55`) — abaixo do piso L1 = 1,00 que a busca semântica precisa cumprir, e é exatamente a
-folga que torna o conjunto discriminante. Este número é informativo (prova a propriedade que a
-asserção do teste exige); o valor oficial, ao lado de semântica e híbrido na mesma tabela, é o que a
-T11 publica.
+Dito isso, como o cálculo do baseline lexical é determinístico sobre o texto do golden set (não
+depende de nenhum provedor de embeddings), o número já pode ser medido a qualquer momento, sem vetor
+nenhum. Medido originalmente pela revisão da T3: o baseline lexical errava 9 das 20 consultas no
+top-3 (`hitRate@3 = 0,55`).
 
-## Grid de calibração e limiares — ainda não medidos
+**Recalculado nesta revisão (MET-524), depois de `gs-07` ser reescrita** — o baseline lexical não
+depende de vetor, então a mudança de `gs-07` muda esse número: agora o baseline lexical erra **8**
+das 20 consultas no top-3 (`hitRate@3 = 0,60`, 12/20) — falhas em `gs-03`, `gs-09`, `gs-10`, `gs-14`,
+`gs-17`, `gs-18`, `gs-19`, `gs-20`. Ainda abaixo do piso L1 = 1,00 que a busca semântica precisa
+cumprir, e ainda a folga que torna o conjunto discriminante — mas a folga diminuiu (de 9 para 8
+falhas), porque a `gs-07` nova é agora acertada pelo baseline lexical, e vale registrar por quê:
+**não é sinal lexical genuíno**, é desempate. `gs-07` empata em contagem de palavra de conteúdo (2)
+entre vários candidatos de especialidades diferentes (`carlos-duarte-rp-108`,
+`fernando-duarte-pet-028`, `gabriel-freitas-ubl-038`, entre outros — nenhum deles compartilha mais de
+2 palavras de conteúdo com a consulta), e o desempate por `slug` (ordem alfabética, mesma disciplina
+de ordem total do `LexicalBaseline`) coloca `gabriel-freitas-ubl-038` (diarista) na 3ª posição do
+top-3, ao lado de `carlos-duarte-rp-108` (professor-particular) e `fernando-duarte-pet-028` (pintor)
+nas duas primeiras. Ou seja: a revisão de `gs-07` (motivada por construção do enunciado, não pela
+régua — ver ADR-004) teve um efeito colateral mensurável, reduzindo marginalmente a discriminação do
+golden set contra correspondência literal de palavra. Não invalida a consulta (a ponte continua
+conceitual, zero sobreposição de palavra com a descrição-alvo real) nem quebra a asserção estrutural
+desta seção (`hitRate@3 = 0,60 < 1,00`), mas fica registrado — a régua não se ajusta escondendo o que
+mudou. Este número é informativo (prova a propriedade que a asserção do teste exige); o valor
+oficial, ao lado de semântica e híbrido na mesma tabela, é o que a T11 publica.
 
-A tabela completa do grid (18 pontos: `semanticWeight × distanceDecayKm`), a comparação
-só-semântica vs. híbrido e os pesos efetivamente escolhidos **ficam em branco até a T11** rodar o eval
-de verdade contra Postgres + pgvector com vetores reais. Os limiares (`hit@3 = 1,00`,
-`precision@5 ≥ 0,70`, ordem 100% satisfeita) estão fixados na spec (MET-479, "Medição do Case →
-Limiares") e não são decisão desta task — nenhum agente decide piso ou peso; quem mede é a T11, quem
-ratifica é o dono (spec, P2).
+## Grid de calibração e limiares — MEDIDO (T11 reexecutada, MET-524); régua fecha com `L2` revisado (ADR-005)
 
-<!-- T11 preenche a tabela abaixo; T12 confere que os números aqui batem com a saída do teste. -->
+**Medição real** (2026-08-11), `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`, contra
+Postgres + pgvector real (Testcontainers), corpus semeado com os vetores REAIS de
+`db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json` (não `hashing`), consultas vetorizadas
+pelo MESMO `SearchQueryEmbedder`/`PrecomputedEmbeddingStore` que a API usa, candidatos recuperados
+por `ProfessionalSearchQuery` (a mesma consulta SQL da API) e re-ranqueados pelos 18 pontos com
+`HybridRanker.Rank` — a mesma camada de busca, ponta a ponta, exceto o transporte HTTP. As métricas
+são calculadas sobre a lista TRUNCADA em `Search:DefaultResultLimit` (10) — a mesma lista que a API
+devolveria a um cliente que não informa `limit`.
 
-| `semanticWeight` | `distanceDecayKm` | `hitRate@3` | `meanPrecision@5` | ordem 100%? |
-|---|---|---|---|---|
-| *(pendente — T11)* | | | | |
+Esta é a **segunda** execução real da T11. A primeira (2026-08-10, `bge-m3`, branch `met-479-t11`,
+não mesclada) reprovou com `hitRate@3 = 0,75` (falhas: `gs-05`, `gs-07`, `gs-09`, `gs-14`, `gs-18`) e
+`meanPrecision@5` entre 0,39 e 0,42. Seguindo a ordem de diagnóstico pré-comprometida abaixo (modelo
+primeiro), o dono decidiu trocar de modelo (`qwen3-embedding-0.6b`) e revisar `gs-07` por um defeito
+de construção — `project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md` (repo do
+harness). Esta seção registra a medição **depois** dessa mudança — uma única vez, sem segunda
+rodada de ajuste (disciplina da própria MET-524).
 
-**Pesos escolhidos:** *(pendente — T11, com a regra de escolha da spec aplicada e justificada aqui)*
+⛔→✅ **Resultado da medição (inalterado desde a primeira leitura desta T11): `hitRate@3 = 1,00` no
+ponto configurado (L1 e L4 fecham) e L3 é alcançável em um único ponto do grid, mas NENHUM ponto do
+grid satisfaz `meanPrecision@5 ≥ 0,70` (o piso ORIGINAL da spec)** — o melhor `meanPrecision@5` entre
+os pontos elegíveis (que satisfazem L1 e L3 juntos) é **0,41**, bem abaixo de 0,70. Diante disso a T11
+**parou e reportou** — exatamente o que `spec.md:163-165` manda quando o melhor ponto do grid fica
+abaixo do piso: "o dono decide... ou ratifica um limiar menor via ADR. Nenhum agente escolhe". Nenhum
+peso foi escolhido por este agente, nenhum piso foi alterado por este agente, nada em
+`golden-set.json` foi tocado.
 
-**Só-semântica vs. híbrido:** *(pendente — T11; o ponto `semanticWeight = 1,0` do grid é a própria
-linha de base)*
+**O dono decidiu** (2026-08-11, fora desta task, registrado em
+`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` no repo do harness): ratificar
+um piso menor, derivado da MESMA regra aritmética que a spec já usa para o caso simétrico de subir o
+piso (`spec.md:161`, arredondar para baixo em passos de 0,05), aplicada ao valor medido no único ponto
+elegível. Ver "Piso `L2` baixado de 0,70 para 0,40", logo após a tabela, para o número antigo, o novo
+e o porquê. A tabela abaixo é a saída real e completa do teste (nenhum ponto foi omitido) — os NÚMEROS
+medidos não mudam; o que muda é o piso contra o qual eles são julgados:
 
-**Sobreajuste, dito sem rodeio:** calibrar até 18 pontos contra as mesmas 20 consultas que os avaliam
-é sobreajuste — o case não finge o contrário. Três mitigações, nenhuma delas prova generalização:
-o grid é pequeno e declarado *a priori* (não se amplia depois de ver o resultado); o desempate
-favorece o modelo mais simples (maior `semanticWeight`, menor dependência do fator geográfico); a
-tabela **inteira** é publicada, não só o vencedor. Vinte consultas medem uma direção, não uma
-garantia.
+| `semanticWeight` | `distanceDecayKm` | `hitRate@3` | `meanPrecision@5` | ordem 100%? | L1&L3? |
+|---|---|---|---|---|---|
+| 1,0 | 5  | 1,00 | 0,41 | não (1/2) | não |
+| 1,0 | 10 | 1,00 | 0,41 | não (1/2) | não |
+| 1,0 | 20 | 1,00 | 0,41 | não (1/2) | não |
+| **0,9** | **5** *(adotado — appsettings.json)* | **1,00** | **0,41** | **sim (2/2)** | **sim** |
+| 0,9 | 10 | 0,95 | 0,41 | sim (2/2) | não |
+| 0,9 | 20 | 0,95 | 0,41 | sim (2/2) | não |
+| 0,8 | 5  | 1,00 | 0,40 | não (1/2) | não |
+| 0,8 | 10 | 1,00 | 0,40 | não (1/2) | não |
+| 0,8 | 20 | 0,95 | 0,41 | sim (2/2) | não |
+| 0,7 | 5  | 0,95 | 0,40 | não (1/2) | não |
+| 0,7 | 10 | 1,00 | 0,40 | não (0/2) | não |
+| 0,7 | 20 | 1,00 | 0,40 | não (1/2) | não |
+| 0,6 | 5  | 0,95 | 0,40 | não (0/2) | não |
+| 0,6 | 10 | 0,95 | 0,40 | não (0/2) | não |
+| 0,6 | 20 | 1,00 | 0,40 | não (0/2) | não |
+| 0,5 | 5  | 0,85 | 0,39 | não (0/2) | não |
+| 0,5 | 10 | 0,95 | 0,40 | não (0/2) | não |
+| 0,5 | 20 | 0,95 | 0,40 | não (0/2) | não |
+
+Só **um** dos 18 pontos (`w_s=0,9 / τ=5`) satisfaz L1 e L3 simultaneamente — o subconjunto elegível
+da regra de escolha da spec não está mais vazio como na medição contra `bge-m3`, mas o único elegível
+mede `meanPrecision@5 = 0,41`, abaixo do piso ORIGINAL de 0,70 da spec. A regra de calibração do L2
+para SUBIR o piso ("o piso medido pode subir, nunca descer") não se aplica aqui: o número medido no
+único ponto elegível está abaixo do piso fixado pela spec, não acima dele — é o outro ramo que a
+própria spec já previa (`spec.md:163-165`) e que motivou a decisão do dono documentada logo abaixo.
+
+Para referência (baseline lexical, determinístico, sem vetor nenhum, recalculado contra o golden set
+desta revisão — ver "Baseline lexical" acima): `hitRate@3 = 0,60` (baseline lexical) < `0,85`–`1,00`
+(grid semântico/híbrido medido agora) — a folga entre busca semântica e correspondência literal de
+palavra ficou ainda maior
+com o modelo novo do que estava com `bge-m3` (`0,75`–`0,80`).
+
+**Só-semântica vs. híbrido:** `semanticWeight = 1,0` (só-semântica) alcança `hitRate@3 = 1,00` nos 3
+pontos de `τ`, mas falha L3 (1/2) nos três — sem proximidade no score, os dois pares de
+`expectedRankedAbove` (`gs-16`, `gs-17`) não têm como ser desempatados por distância. O único ponto
+elegível (`0,9/5`) já é híbrido, com peso de proximidade pequeno (0,1) — é o suficiente para resolver
+a ordem sem alterar `hitRate@3`.
+
+### Piso `L2` baixado de 0,70 para 0,40 (ADR-005, 2026-08-11)
+
+**Pesos escolhidos: `semanticWeight = 0,9`, `proximityWeight = 0,1`, `distanceDecayKm (τ) = 5`.** A
+regra de escolha da spec (`spec.md:177-182`: "descartar pontos que violem L1 ou L3 → maior
+`meanPrecision@5` → empate...") tem, desta medição, exatamente **um** sobrevivente ao primeiro filtro
+(`0,9/5`) — não há empate a resolver, a regra termina no primeiro passo. `appsettings.json:Ranking`
+foi atualizado com estes valores (era 0,7 / 0,3 / 10 / 0,0 — os provisórios da T1); o comentário
+"provisório" foi removido e substituído pela referência à medição e à ADR-005.
+
+**Limiar `L2`: RATIFICADO em 0,40 — piso ANTIGO 0,70, piso NOVO 0,40, decisão do dono via ADR, nunca
+em silêncio.** O único ponto elegível a L1/L3 mede `meanPrecision@5 = 0,41`. Como esse valor fica
+ABAIXO do piso original (não acima), a regra de calibração do L2 para SUBIR não se aplica; o cenário é
+o outro que a spec já previa (`spec.md:163-165`): "se o melhor ponto ficar abaixo de 0,70... ratificar
+um limiar menor via ADR. Nenhum agente escolhe." O dono ratificou, em
+`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` (repo do harness), um piso
+NOVO derivado pela MESMA regra aritmética que a spec usa para o caso simétrico de subir o piso
+(`spec.md:161`, arredondar para baixo em passos de 0,05) aplicada ao valor medido:
+
+```
+L2 = floor(0,41 / 0,05) × 0,05 = 0,40
+```
+
+**Por que isso não é "afrouxar a régua até passar".** O número não foi escolhido para caber — ele sai
+mecanicamente da mesma fórmula que a spec já declarava, aplicada ao único ponto elegível, medido antes
+de qualquer decisão de piso ser tomada. A causa do teto foi isolada com evidência direta, não palpite:
+leave-one-out sobre as 150 descrições reais do corpus (cada uma usada como consulta contra as outras
+149, via `<=>`) mede `meanPrecision@5 = 0,7173` — mesmo no cenário mais favorável concebível (a
+"consulta" é o texto literal de uma descrição do corpus), só 3,6 dos 5 vizinhos mais próximos são da
+mesma especialidade. Combinando essa medição com o teto estrutural das 5 consultas com localização
+(1,40 no agregado, já registrado acima): `teto realista = (15 × 0,7173 + 1,40) / 20 ≈ 0,61` — abaixo
+do 0,70 original mesmo no melhor caso possível. Ver "Hipóteses" abaixo para a cadeia completa de
+diagnóstico (modelo → corpus → fórmula) que chegou a essa conclusão.
+
+**O que `L2 = 0,40` passa a significar.** Deixou de ser uma ambição de qualidade — a métrica está
+limitada pela composição do corpus (15 especialidades de vocabulário próximo entre si), não pelo
+ranking, e nenhum modelo nem combinação de pesos neste espaço a move. `L2` passa a ser uma **guarda de
+regressão**: existe para que uma mudança futura que derrube `meanPrecision@5` (um refactor que quebra
+o cálculo de score, uma troca de modelo que piora a semântica, um peso mal calibrado) seja pega pelo
+teste — não para certificar que a busca está "boa o bastante" em sentido absoluto.
+
+**O tamanho real da folga (0,41 → 0,40), medido, não estimado.** `precision@5` por consulta é `k/5`
+(`k ∈ {0..5}`) — o denominador é sempre 5 porque `n ≥ 5` nas 20 consultas do golden set (mesmo as 5
+com localização têm de 8 a 18 candidatos dentro do raio, ver "Teto estrutural" acima) — logo cada
+`precision@5` é múltiplo de 0,2, e `meanPrecision@5` (a média de 20 desses valores) só assume
+múltiplos de `0,2 / 20 = 0,01`. A folga `0,41 − 0,40 = 0,01` é **exatamente uma unidade dessa
+granularidade — a menor folga não-nula que a métrica consegue expressar**: uma única consulta
+perdendo um relevante do top-5 ainda passa; duas perdas dessa magnitude (na mesma consulta ou em
+consultas diferentes) reprovam.
+
+**O que não foi feito, e por quê.** O dono decidiu, explicitamente, não mexer no corpus
+(`db/seed/professionals.json`) nem nas 20 consultas (`eval/golden-set.json`) — a alavanca que a
+evidência do leave-one-out sugeriria como a única capaz de mover `meanPrecision@5` de verdade — para
+não reabrir a medição inteira nesta altura do case. Fica registrado como gatilho de revisão da
+ADR-005, não como ação tomada aqui.
+
+**`MinSemanticScore`: mantido em 0.** O problema medido não é ruído (candidato irrelevante entrando
+por proximidade) — é precisão insuficiente mesmo sem localização nenhuma (as 15 consultas sem
+localização têm o mesmo `precision@5` em todo o grid, porque sem localização a proximidade não entra
+e o score é a semântica bruta — D4/ADR-003). Cortar pelo fator semântico não tem evidência de resolver
+uma questão de quantos candidatos de OUTRAS especialidades ficam misturados no top-5 (ver hipóteses
+abaixo); ligar o corte sem essa evidência fica registrado como gatilho de revisão da ADR-005, não
+decisão tomada aqui.
+
+**Sobreajuste, com o vencedor já conhecido — dito sem rodeio.** Desta vez a regra de escolha produziu
+um vencedor (`0,9/5`), e as três mitigações declaradas antes de medir continuam valendo: o grid é
+pequeno e foi fixado *a priori* (não se ampliou depois de ver o resultado desfavorável na primeira
+leitura desta mesma T11); a regra de desempate favoreceria o modelo mais simples se houvesse mais de
+um ponto elegível empatado — aqui nem chegou a ser necessária, porque só um ponto sobreviveu ao
+primeiro filtro; a tabela **inteira** (18 pontos) é publicada acima, não só o vencedor. O piso `L2`,
+por sua vez, não foi calibrado contra o mesmo conjunto que ele avalia no sentido de "escolher o número
+que passa" — ele é uma função determinística (arredondamento) do valor medido no ponto já escolhido
+pela regra independente dos pesos. Vinte consultas continuam medindo uma direção, não uma garantia; a
+mudança de piso é sobre reconhecer o teto real dessa direção, não sobre fingir uma garantia maior.
+
+### Hipóteses (ordem de diagnóstico pré-comprometida, aplicada à medição real)
+
+A troca de modelo (ADR-004) resolveu o que a medição contra `bge-m3` apontava como suspeito
+principal: `hitRate@3` subiu de 0,75 para 1,00 no ponto configurado, e todas as 20 consultas —
+inclusive as 5 que falhavam antes (`gs-05`, `gs-07` revisada, `gs-09`, `gs-14`, `gs-18`) — agora têm
+ao menos um profissional relevante no top-3. **Isto confirma a hipótese 1 da medição anterior**: o
+modelo era, de fato, a causa da falha de L1.
+
+Mas `meanPrecision@5` não se moveu na mesma proporção: **0,39–0,41 com `qwen3-embedding-0.6b`**,
+praticamente o MESMO intervalo medido com `bge-m3` (0,39–0,42), apesar de `hitRate@3` ter subido ~25
+pontos percentuais. Inspeção direta (consulta SQL `<=>` contra o banco real, fora do teste, para não
+alterar a régua) em cinco consultas sem localização confirma o padrão: o profissional relevante
+aparece cedo (posição 1, no geral), mas o top-5 inteiro mistura especialidades — `gs-01` ("vazamento
+no banheiro") traz 2 encanadores em 5 (as outras 3 posições: vidraceiro, eletricista, vidraceiro);
+`gs-02` traz 2 encanadores em 5; `gs-09` (chaveiro) traz 2 chaveiros em 5; `gs-05` (pintor) traz 2
+pintores em 5 (mais 2 diaristas — especialidade plausível mas fora de `expectedSpecialties`, que só
+lista `pintor`); só `gs-13` (professor particular) chega a 4/5. Isso é consistente com
+`meanPrecision@5 ≈ 0,40` medido no agregado: por volta de 2 de cada 5 resultados do top-5 pertencem à
+especialidade esperada, independentemente de qual dos dois modelos gerou os vetores.
+
+1. **O modelo de embeddings — já respondido, não é mais o suspeito principal.** A troca resolveu
+   `hitRate@3` quase por completo (1,00 no ponto configurado, entre 0,85 e 1,00 em todo o grid) sem
+   mover `meanPrecision@5`. Isso descarta o modelo como explicação para a falha de L2 remanescente —
+   os dois modelos, com qualidades de ranking muito diferentes na métrica que mede "o topo está
+   certo?", convergem para o MESMO teto em "o top-5 inteiro está certo?".
+2. **A densidade e a distintividade do corpus por especialidade — suspeito principal agora.** O
+   corpus tem 150 profissionais em 15 especialidades (10 cada). Para as 15 consultas sem localização,
+   o filtro geográfico não restringe nada (D4) — os 140 profissionais de OUTRAS especialidades são
+   todos candidatos, e o suficiente deles descreve serviços residenciais em linguagem próxima o
+   bastante (conserto, resolução de problema doméstico, atendimento rápido) para ocupar 2 a 3 das 5
+   posições do top-5 em quase toda consulta, mesmo quando o candidato mais relevante de todos vence a
+   primeira posição. Isto é diferente do teto estrutural já documentado nesta seção (que é sobre
+   `n` pequeno em consultas COM localização) — aqui `n` é o corpus inteiro (150) e ainda assim a
+   precisão não sobe, porque o problema não é falta de candidatos relevantes, é excesso de candidatos
+   IRRELEVANTES semanticamente próximos.
+
+   **Medição direta da distintividade intrínseca do corpus (leave-one-out).** Para separar "o modelo
+   erra" de "o corpus não é distintivo o bastante para qualquer modelo", cada uma das 150 descrições
+   de `db/seed/professionals.json` foi usada como CONSULTA contra as outras 149 (a própria embedding
+   real do profissional, já gravada em `professionals.embedding`, comparada por `<=>` contra as
+   demais 149 linhas — SQL abaixo, fora do teste, para não alterar a régua):
+
+   ```sql
+   WITH loo AS (
+     SELECT p.id AS query_id, p.specialty_id AS query_specialty,
+            n.specialty_id AS neighbor_specialty,
+            ROW_NUMBER() OVER (PARTITION BY p.id ORDER BY p.embedding <=> n.embedding) AS rn
+     FROM professionals p JOIN professionals n ON n.id <> p.id
+   ), top5 AS (
+     SELECT query_id, query_specialty, neighbor_specialty FROM loo WHERE rn <= 5
+   ), per_query AS (
+     SELECT query_id, AVG((neighbor_specialty = query_specialty)::int::numeric) AS precision5
+     FROM top5 GROUP BY query_id
+   )
+   SELECT AVG(precision5) FROM per_query;
+   ```
+
+   Resultado: **`meanPrecision@5` leave-one-out = 0,7173** (média sobre os 150 profissionais). Ou
+   seja: mesmo na situação mais favorável concebível — a "consulta" é o texto literal de uma
+   descrição do corpus, vocabulário e estilo idênticos ao candidato mais relevante possível —, em
+   média só **3,6 dos 5** vizinhos mais próximos por `<=>` são da MESMA especialidade. Isto isola a
+   distintividade do corpus do efeito de "consulta em linguagem de cliente, sem vocabulário": mesmo
+   sem esse efeito, o corpus não separa as 15 especialidades o bastante para 5/5.
+
+   **Projeção de um teto realista para `meanPrecision@5` do golden set completo**, combinando esta
+   medição com o teto estrutural já registrado acima (a tabela de 5 consultas com localização, cujo
+   teto médio por consulta é `1,40 / 5 = 0,28`, já contas na régua de 200 km/candidatos elegíveis):
+   assumindo que as 15 consultas sem localização, no melhor caso possível, alcançassem o mesmo
+   `0,7173` que a distintividade intrínseca do corpus permite —
+
+   ```
+   teto realista = (15 × 0,7173 + 1,40) / 20 = 12,16 / 20 ≈ 0,61
+   ```
+
+   **0,61 < 0,70 — o piso L2 é inalcançável com este corpus, mesmo num cenário irrealisticamente
+   favorável** (consulta = texto literal do corpus; nenhuma consulta real de cliente chega a esse
+   patamar de proximidade lexical/semântica com a descrição-alvo, já que o golden set exige ponte
+   conceitual, não paráfrase). Isto é evidência direta — não apenas inferência por eliminação — de
+   que o gargalo é a distintividade do corpus entre especialidades, não o modelo escolhido nem a
+   fórmula do ranking.
+3. **A fórmula — descartada de novo, com evidência mais forte que na medição anterior.** O ponto mais
+   favorável do grid para `meanPrecision@5` (0,41, no único ponto elegível) mal se move em relação ao
+   pior (0,39) — uma faixa de 0,02 entre os 18 pontos, contra um piso que exige subir 0,29. Nenhuma
+   combinação de peso e `τ` resolve um problema que está na composição do corpus, não na combinação
+   dos dois fatores.
+
+**Conclusão da medição (T11 reexecutada, MET-524):** a causa que a primeira medição apontava (o
+modelo) foi resolvida — `hitRate@3` subiu de 0,75 para 1,00. O gargalo remanescente é
+`meanPrecision@5`, e a hipótese com evidência mais forte não é só inferência por eliminação — é
+**medida diretamente**: a distintividade intrínseca do corpus (leave-one-out,
+`meanPrecision@5 = 0,7173`) projeta um teto realista de **≈ 0,61** para o golden set completo, abaixo
+do piso ORIGINAL de 0,70 mesmo no cenário mais favorável possível. O corpus (15 especialidades de 10
+profissionais cada, com vocabulário de "serviço doméstico" suficientemente próximo entre elas) não é
+distintivo o bastante para o piso original, com nenhum modelo de embeddings nem nenhuma combinação de
+pesos.
+
+**Decisão do dono (2026-08-11, registrada em ADR-005, fora desta medição):** em vez de ampliar o
+corpus, tornar as descrições mais distintivas ou revisar o golden set — qualquer uma reabriria a
+medição inteira —, o dono ratificou um piso `L2` menor (0,40, derivado mecanicamente do valor medido
+no único ponto elegível pela mesma regra de arredondamento que a spec já usa) e os pesos que a regra
+de escolha já apontava (`w_s=0,9`, `τ=5`). Com isso, a régua do M1 fecha: `L1`, `L2` (revisado), `L3` e
+`L4` todos satisfeitos no ponto agora configurado em `appsettings.json`. Ver a seção "Piso `L2` baixado
+de 0,70 para 0,40" acima para o racional completo, e
+`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` (repo do harness) para a ADR.
 
 ## Congelamento
 
@@ -290,18 +551,20 @@ ambígua** no corpus real, e o ajuste vai registrado no relatório da task que o
 remove nem se reescreve só porque falhou — isso é ajustar a régua para o código passar, e é
 exatamente o que este projeto se recusa a fazer (`PROJECT-MISSION.md` § Fronteiras invioláveis #3).
 
-## `eval/embeddings/text-embedding-bge-m3.json` (T10 — vetores das consultas do golden set)
+## `eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (T10 — vetores das consultas do golden set)
 
-Gerado uma única vez (gate humano concluído em 2026-08-10), com o **mesmo modelo** do artefato do
-corpus (`db/seed/embeddings/text-embedding-bge-m3.json`, procedência completa documentada em
-`db/seed/README.md` — modelo, quantização, ausência de prefixo de instrução, tudo vale igual aqui e
-não é repetido nesta seção).
+Gerado com o **mesmo modelo** do artefato do corpus (`db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json`,
+procedência completa documentada em `db/seed/README.md` — modelo, quantização, ausência de prefixo de
+instrução, tudo vale igual aqui e não é repetido nesta seção). **Modelo trocado na MET-524**
+(`project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md`, repo do harness) — era
+`text-embedding-bge-m3.json` (gate humano concluído em 2026-08-10, T10 original); regenerado em
+2026-08-11 com `qwen3-embedding-0.6b`, mesmo formato, mesma dimensão (1024), nenhuma migration.
 
 - **Formato:** o mesmo do corpus (`model`, `dimensions`, `hashAlgorithm`, `vectors[]`), com dois
   campos adicionais por entrada — `id` (o `id` da consulta em `golden-set.json`) e `text` (o texto
   da consulta; **não é segredo**, já está versionado em `golden-set.json` — é ele que alimenta
   `exampleQueries` de `GET /api/search/options`, D8 da spec MET-479).
-- **`model` idêntico ao artefato do corpus** — `openai-compatible:text-embedding-bge-m3@1024`.
+- **`model` idêntico ao artefato do corpus** — `openai-compatible:text-embedding-qwen3-embedding-0.6b@1024`.
   `PrecomputedEmbeddingStore.Load` falha no boot se os dois artefatos declararem `model` diferentes
   (BSC-20). **Testado, não é conferência visual**:
   `tests/Prumo.Api.Tests/Eval/GoldenSetEmbeddingsArtifactTests.cs` carrega os DOIS artefatos REAIS
@@ -328,8 +591,8 @@ não é repetido nesta seção).
   `exampleQueries` (até `Search:ExampleQueryLimit`, default 8): as 8 primeiras consultas de
   demonstração da tela são `gs-01`…`gs-08`, começando pela frase do case.
 - **Determinístico, sem timestamp, EOL LF** — duas gerações contra o mesmo endpoint (LM Studio
-  local, `bge-m3`/`Q8_0`), comparadas componente a componente: **0 de 20.480 valores divergentes**
-  (20 vetores × 1024 dimensões, float32).
+  local, `qwen3-embedding-0.6b`/`Q8_0`), comparadas byte a byte: **arquivo idêntico** entre as duas
+  execuções (`diff` sem saída).
 - **Verificado de fato** (não presumido): com `Embeddings__Provider=precomputed` e
   `Embeddings__PrecomputedPaths` apontando para os dois artefatos (corpus + consultas — ver
   `.env.example`), `GET /api/search?q=vazamento+no+banheiro` responde **200**, `mode: "precomputed"`,
@@ -344,30 +607,45 @@ nenhum `PackageReference` novo), reusando `EmbeddingDocument.For`/`.Hash` e o `I
 configurado — nunca uma reimplementação paralela de normalização, hash ou chamada HTTP:
 
 ```bash
-# A partir da raiz do repo. Suba o LM Studio servindo text-embedding-bge-m3 (quantização Q8_0) em
-# http://localhost:1234/v1 primeiro (mesmo servidor que gerou o artefato do corpus).
+# A partir da raiz do repo. Suba o LM Studio servindo text-embedding-qwen3-embedding-0.6b
+# (quantização Q8_0) em http://localhost:1234/v1 primeiro (mesmo servidor que gerou o artefato do
+# corpus).
 export Embeddings__Provider=openai-compatible
 export Embeddings__BaseUrl=http://localhost:1234/v1
-export Embeddings__Model=text-embedding-bge-m3
+export Embeddings__Model=text-embedding-qwen3-embedding-0.6b
+export Eval__OutputPath=eval/embeddings/text-embedding-qwen3-embedding-0.6b.json
 dotnet run --project src/Prumo.Eval
 ```
 
 Lê `eval/golden-set.json` (`Eval:GoldenSetPath`, default), calcula `EmbeddingDocument.For`/`.Hash`
 para cada `text`, chama o `IEmbeddingProvider` configurado e escreve
-`eval/embeddings/text-embedding-bge-m3.json` (`Eval:OutputPath`, default) no formato acima, na
-ordem de `golden-set.json`, sem timestamp, EOL LF, sem BOM. **Verificado**: a saída deste comando
-reproduz o artefato versionado deste repo byte a byte (mesma checagem de determinismo bit-a-bit da
-T9 — ver acima). Trocar de modelo/quantização é o mesmo comando com `Embeddings__Model` diferente e
-`export Eval__OutputPath=eval/embeddings/<modelo-novo>.json` — nome de arquivo novo, mesma convenção
-do corpus (`PrecomputedEmbeddingStore.Load` detecta `model` divergente entre arquivos e derruba o
-boot).
+`eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (`Eval:OutputPath`; é também o default do
+código desde a MET-524 — `EvalProgram.DefaultOutputPath`) no formato acima, na ordem de
+`golden-set.json`, sem timestamp, EOL LF, sem BOM. **Verificado**: a saída deste comando reproduz o
+artefato versionado deste repo byte a byte (mesma checagem de determinismo bit-a-bit da T9 — ver
+acima). Trocar de modelo/quantização é o mesmo comando com `Embeddings__Model` diferente e
+`Eval__OutputPath=eval/embeddings/<modelo-novo>.json` — nome de arquivo novo, mesma convenção do
+corpus (`PrecomputedEmbeddingStore.Load` detecta `model` divergente entre arquivos e derruba o boot).
 
-## Pendência conhecida
+## Estado atual: régua fechada (ADR-005, 2026-08-11)
 
-**T10 concluída** (2026-08-10): `db/seed/embeddings/text-embedding-bge-m3.json` (corpus, T9) e
-`eval/embeddings/text-embedding-bge-m3.json` (consultas do golden set, T10) existem, ambos com
-`model: "openai-compatible:text-embedding-bge-m3@1024"`. **T11 (o eval, o grid de 18 pontos e a
-calibração dos pesos) ainda não rodou** — a tabela da seção "Grid de calibração e limiares" acima,
-os limiares L1–L4 medidos de verdade e a comparação só-semântica vs. híbrido continuam pendentes
-dessa task, não desta. Enquanto T11 não roda, o que este diretório garante é a **conformidade
-estrutural** da régua (T3) — a régua está pronta para medir.
+**T10 regenerada com o modelo novo** (2026-08-11, MET-524): `db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json`
+(corpus, T9) e `eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (consultas do golden set,
+T10) existem, ambos com `model: "openai-compatible:text-embedding-qwen3-embedding-0.6b@1024"`; os
+artefatos do `bge-m3` foram removidos. **T11 rodou pela segunda vez** (a primeira, contra `bge-m3`,
+está preservada apenas na branch `met-479-t11`, não mesclada) — `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`
+mede as 20 consultas contra Postgres + pgvector real, com vetores REAIS, pela mesma camada de busca
+da API. Essa segunda medição fechou L1 e L4 (`hitRate@3 = 1,00`), tornou L3 alcançável em um ponto do
+grid, mas não fechou L2 contra o piso ORIGINAL da spec (`meanPrecision@5 ≥ 0,70` — o melhor ponto
+elegível mede 0,41). A tabela completa medida, a comparação só-semântica vs. híbrido, as hipóteses
+(ordem de diagnóstico pré-comprometida) e a evidência de teto estrutural do corpus estão na seção
+"Grid de calibração e limiares" acima.
+
+**Fora desta medição, o dono decidiu** (`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`,
+repo do harness, 2026-08-11): ratificar `L2 = 0,40` — derivado mecanicamente do valor medido no único
+ponto elegível pela mesma regra de arredondamento que a spec já declarava — e adotar os pesos que a
+regra de escolha já apontava (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`). `appsettings.json:Ranking` foi
+atualizado com esses valores; `GoldenSetEvalTests.L2Threshold` foi atualizado para 0,40, com comentário
+citando a ADR-005. **A régua do M1 fecha**: L1, L2 (revisado), L3 e L4 satisfeitos no ponto configurado.
+Corpus, golden set, artefatos, L1, L3 e o grid de 18 pontos permanecem exatamente como estavam — nada
+disso foi tocado por esta decisão.

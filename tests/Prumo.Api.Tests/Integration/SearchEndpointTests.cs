@@ -98,10 +98,12 @@ public sealed class SearchEndpointTests(PostgresIntegrationFixture fixture)
         var results = root.GetProperty("results");
         Assert.True(results.GetArrayLength() > 0, "Esperava ao menos um resultado para uma consulta com sobreposição lexical com o corpus.");
 
-        // MinSemanticScore=0.0 (default provisório) não descarta ninguém — totalCandidates é o corpus
-        // inteiro (~150+, sem localização nenhum predicado geográfico filtra), bem maior que os 10
-        // resultados default (DefaultResultLimit): reprova o mutante "totalCandidates = results.Count"
-        // (contagem DEPOIS do limit) diretamente no corpo HTTP, não só na unidade (HybridRankerTotalCandidatesTests).
+        // MinSemanticScore=0.0 (RATIFICADO pela ADR-005 — não é mais default provisório, ver
+        // project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md no repo do harness)
+        // não descarta ninguém — totalCandidates é o corpus inteiro (~150+, sem localização nenhum
+        // predicado geográfico filtra), bem maior que os 10 resultados default (DefaultResultLimit):
+        // reprova o mutante "totalCandidates = results.Count" (contagem DEPOIS do limit) diretamente
+        // no corpo HTTP, não só na unidade (HybridRankerTotalCandidatesTests).
         var totalCandidates = root.GetProperty("totalCandidates").GetInt32();
         Assert.True(
             totalCandidates > results.GetArrayLength(),

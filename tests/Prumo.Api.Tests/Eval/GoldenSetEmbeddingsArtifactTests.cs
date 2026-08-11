@@ -8,7 +8,8 @@ namespace Prumo.Api.Tests.Eval;
 
 /// <summary>
 /// Guarda irmã de <see cref="Prumo.Api.Tests.SeedCorpusTests.EveryProfessionalServiceDescriptionHash_ExistsInThePrecomputedEmbeddingsArtifact"/>
-/// (T9, MET-478), agora para o artefato de CONSULTAS do golden set (<c>eval/embeddings/text-embedding-bge-m3.json</c>,
+/// (T9, MET-478), agora para o artefato de CONSULTAS do golden set (<c>eval/embeddings/text-embedding-qwen3-embedding-0.6b.json</c>,
+/// modelo trocado na MET-524/ADR-004 — era <c>text-embedding-bge-m3.json</c>,
 /// T10, MET-479, BSC-20).
 ///
 /// <para>
@@ -32,10 +33,10 @@ public sealed class GoldenSetEmbeddingsArtifactTests
     private static readonly string GoldenSetPath = Path.Combine(RepoRoot, "eval", "golden-set.json");
 
     private static readonly string CorpusEmbeddingsPath =
-        Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-bge-m3.json");
+        Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-qwen3-embedding-0.6b.json");
 
     private static readonly string QueryEmbeddingsPath =
-        Path.Combine(RepoRoot, "eval", "embeddings", "text-embedding-bge-m3.json");
+        Path.Combine(RepoRoot, "eval", "embeddings", "text-embedding-qwen3-embedding-0.6b.json");
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -87,8 +88,8 @@ public sealed class GoldenSetEmbeddingsArtifactTests
 
     /// <summary>
     /// Sem esta guarda, editar o <c>text</c> de uma consulta em <c>eval/golden-set.json</c> sem
-    /// regenerar <c>eval/embeddings/text-embedding-bge-m3.json</c> deixa LINT + TEST + INTEGRATION
-    /// (fora do T11, que ainda não existe) verdes — o sintoma só aparece como um 422 silencioso em
+    /// regenerar <c>eval/embeddings/text-embedding-qwen3-embedding-0.6b.json</c> (modelo trocado na
+    /// MET-524/ADR-004) deixa LINT + TEST verdes — o sintoma só aparece como um 422 silencioso em
     /// runtime, com <c>exampleQueries</c> ainda servindo o <c>text</c> ANTIGO que sobrevive no
     /// artefato (design.md §5.1 da MET-479: <c>exampleQueries</c> vem de
     /// <see cref="PrecomputedEmbeddingStore.Entries"/>, não de <c>golden-set.json</c> diretamente) —
