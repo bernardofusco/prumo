@@ -47,6 +47,21 @@ public sealed class EmbeddingDocumentTests
     }
 
     /// <summary>
+    /// MET-527, design deliberado: a insensibilidade à caixa vive SÓ em <see cref="EmbeddingDocument.Hash"/>
+    /// (a chave de identidade) — nunca aqui. O texto que <see cref="EmbeddingDocument.For"/> devolve é
+    /// exatamente o que <see cref="IEmbeddingProvider.EmbedAsync"/> recebe; minusculizar aqui mudaria o
+    /// texto embeddado (e, com ele, todos os vetores já medidos contra o golden set do M1) por um ganho
+    /// que a chave de hash já entrega sozinha.
+    /// </summary>
+    [Fact]
+    public void For_PreservesTheOriginalCase()
+    {
+        var normalized = EmbeddingDocument.For("  Vazamento no BANHEIRO, urgente.  ");
+
+        Assert.Equal("Vazamento no BANHEIRO, urgente.", normalized);
+    }
+
+    /// <summary>
     /// O XML-doc de <see cref="EmbeddingDocument.For"/> promete colapsar "espaços em branco
     /// consecutivos (espaço, tab, quebra de linha etc.)" — CR faz parte desse "etc.": o corpus da
     /// T4 é lido de um arquivo cuja cópia local pode ter CRLF e cujo blob no git é LF (diferença
@@ -105,6 +120,41 @@ public sealed class EmbeddingDocumentTests
         Assert.NotEqual(hashA, hashB);
     }
 
+    /// <summary>
+    /// MET-527 — o defeito reproduzido em produção: teclado de celular capitaliza a primeira letra
+    /// por padrão, então "Vazamento no banheiro" (digitado) e "vazamento no banheiro" (o texto que
+    /// gerou o vetor pré-computado) precisam resolver para o MESMO <see cref="EmbeddingDocument.Hash"/>
+    /// — senão a busca responde 422 <c>embedding_unavailable</c> para uma consulta que deveria
+    /// funcionar. Cobre variação na primeira letra, em todas as letras e em posição arbitrária no
+    /// meio da frase — não só o caso do teclado de celular.
+    /// </summary>
+    [Theory]
+    [InlineData("vazamento no banheiro", "Vazamento no banheiro")]
+    [InlineData("vazamento no banheiro", "VAZAMENTO NO BANHEIRO")]
+    [InlineData("vazamento no banheiro", "vazamento no Banheiro")]
+    [InlineData("Atendo vazamento na pia com urgência.", "atendo VAZAMENTO na Pia com URGÊNCIA.")]
+    public void Hash_IsTheSame_RegardlessOfCase(string original, string differentCase)
+    {
+        var hashOfOriginal = EmbeddingDocument.Hash(original);
+        var hashOfDifferentCase = EmbeddingDocument.Hash(differentCase);
+
+        Assert.Equal(hashOfOriginal, hashOfDifferentCase);
+    }
+
+    /// <summary>
+    /// A insensibilidade à caixa (<see cref="Hash_IsTheSame_RegardlessOfCase"/>) não é "ignora tudo
+    /// que não for letra igual" — dois textos com letras diferentes, mesmo que só na caixa de uma
+    /// delas mude o resultado, continuam produzindo hashes diferentes.
+    /// </summary>
+    [Fact]
+    public void Hash_IsDifferent_WhenTheTextDiffersByMoreThanCase()
+    {
+        var hashA = EmbeddingDocument.Hash("Vazamento no banheiro");
+        var hashB = EmbeddingDocument.Hash("Vazamento no telhado");
+
+        Assert.NotEqual(hashA, hashB);
+    }
+
     [Fact]
     public void Hash_IsLowercaseHexOfSixtyFourCharacters()
     {
@@ -122,14 +172,21 @@ public sealed class EmbeddingDocumentTests
     /// <see cref="Hash_IsDifferent_WhenTheTextIsDifferent"/> continue passando. Valor calculado
     /// com uma ferramenta independente do código sob teste (Python <c>hashlib.sha256</c> e
     /// <c>openssl dgst -sha256</c>, ambos concordando) sobre os bytes UTF-8 exatos do literal
-    /// abaixo — ver relatório da task para o comando usado.
+    /// abaixo, JÁ MINUSCULIZADO (<c>str.lower()</c>) — ver relatório da task para o comando usado.
+    ///
+    /// <para>
+    /// <b>MET-527:</b> valor atualizado (era <c>887de4431988d0f73b59df2d01ea6e4803be49587cb4da2171ba965f562a49bb</c>,
+    /// o SHA-256 do literal COM a caixa original) desde que <see cref="EmbeddingDocument.Hash"/>
+    /// passou a hashear a chave de identidade case-folded, não o texto literal — ver XML-doc da
+    /// classe.
+    /// </para>
     /// </summary>
     [Fact]
     public void Hash_OfAFixedDocument_MatchesAPreComputedValue()
     {
         var hash = EmbeddingDocument.Hash("Atendo vazamento na pia com urgência.");
 
-        Assert.Equal("887de4431988d0f73b59df2d01ea6e4803be49587cb4da2171ba965f562a49bb", hash);
+        Assert.Equal("35af33f595bb692a7ac093637209aaf04987d30521c1ea3540b3008d1a3dba7f", hash);
     }
 
     [Fact]

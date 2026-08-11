@@ -296,7 +296,11 @@ e são o default de `Embeddings__PrecomputedPaths__0`/`__1` em `.env.example`, c
 - **Digitar uma das 150 descrições de `db/seed/professionals.json` literalmente** (mesmo texto que
   gerou o vetor daquele profissional), ou qualquer uma das **~20 consultas de
   `eval/golden-set.json`** (inclusive as que `GET /api/search/options` devolve em `exampleQueries`),
-  funciona: o hash bate no artefato, `embedding.mode: "precomputed"`, resultado semântico real.
+  funciona: o hash bate no artefato, `embedding.mode: "precomputed"`, resultado semântico real. A
+  busca do hash é **insensível à caixa** (MET-527) — `vazamento no banheiro`, `Vazamento no
+  banheiro` e `VAZAMENTO NO BANHEIRO` batem no MESMO artefato e devolvem o MESMO resultado, o que
+  importa porque teclado de celular capitaliza a primeira letra por padrão; só o texto realmente
+  embeddado (nunca exibido em log) preserva a caixa que gerou o vetor.
 - **Digitar texto livre** fora dessas listas responde **HTTP 422** `embedding_unavailable`, com a
   lista das consultas de demonstração no corpo — comportamento correto por design (D8), não bug.
 - Para buscar por texto livre **arbitrário**, configure `Embeddings__Provider=openai-compatible`

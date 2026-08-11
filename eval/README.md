@@ -544,6 +544,17 @@ problema para o artefato de CONSULTAS do golden set), agora também para o artef
 MET-528, "regenerar o artefato do corpus" só existia em prosa; agora é um comando, com verificação de
 reprodutibilidade (byte a byte, duas execuções) documentada ao lado dele.
 
+### Chaves do artefato do corpus regeneradas — número da régua NÃO muda (MET-527, 2026-08-11)
+
+`EmbeddingDocument.Hash` passou a normalizar a caixa na chave de identidade (racional completo em
+`db/seed/README.md`, "Procedência do artefato de vetores" — "Revisão MET-527"): os 150 `sourceHash`
+do artefato do corpus mudaram, os 150 `embedding` **não** (150/150 idênticos, comparados
+numericamente contra o artefato anterior). O texto embeddado das ~20 consultas do golden set já era
+todo minúsculo — nenhum `sourceHash` daquele artefato mudou, e o arquivo regenerado saiu byte a byte
+idêntico ao anterior. Régua remedida depois da troca de chaves (mesmo comando, mesmo corpus, mesmo
+banco): `hitRate@3 = 1,00`, `meanPrecision@5 = 0,42`, ordem 2/2, L4 passa — **idêntico** ao ponto
+medido pela MET-528, porque nenhum vetor mudou.
+
 ### Hipóteses (ordem de diagnóstico pré-comprometida, aplicada à medição real)
 
 A troca de modelo (ADR-004) resolveu o que a medição contra `bge-m3` apontava como suspeito

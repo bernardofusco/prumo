@@ -203,6 +203,56 @@ public sealed class SearchEndpointTests(PostgresIntegrationFixture fixture)
         }
     }
 
+    /// <summary>
+    /// MET-527, no nível da ROTA (não só da unidade — <c>SearchQueryEmbedderTests</c> já cobre a
+    /// mesma garantia contra um <see cref="PrecomputedEmbeddingStore"/> em memória): o artefato foi
+    /// gerado a partir de <c>precomputedQueryOriginalCase</c> (a caixa "real", como o texto existe
+    /// no corpus/golden set); a requisição HTTP manda a MESMA consulta com a primeira letra
+    /// maiúscula — exatamente o que um teclado de celular produz por padrão. Antes da correção, isto
+    /// respondia 422 <c>embedding_unavailable</c> (o hash da consulta digitada não batia com o
+    /// <c>sourceHash</c> do artefato); agora responde 200 <c>mode: "precomputed"</c>, com o MESMO
+    /// modelo e o MESMO vetor — <see cref="EmbeddingDocument.Hash"/> resolve as duas grafias para a
+    /// mesma chave.
+    /// </summary>
+    [Fact]
+    public async Task GetSearch_WithQueryDifferingFromThePrecomputedArtifactOnlyByCase_StillReturns200WithEmbeddingModePrecomputed()
+    {
+        await EnsureRealCorpusSeededAsync();
+
+        const string precomputedQueryOriginalCase = "vazamento no banheiro para o teste de caixa";
+        var queryTypedWithLeadingCapital = "Vazamento no banheiro para o teste de caixa";
+        var artifactPath = WritePrecomputedArtifact(precomputedQueryOriginalCase);
+
+        Environment.SetEnvironmentVariable("Embeddings__Provider", "precomputed");
+        Environment.SetEnvironmentVariable("Embeddings__PrecomputedPaths__0", artifactPath);
+        try
+        {
+            await using var factory = CreateFactory(fixture.ConnectionString);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync(new Uri(
+                $"/api/search?q={Uri.EscapeDataString(queryTypedWithLeadingCapital)}", UriKind.Relative));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+
+            Assert.Equal("precomputed", root.GetProperty("embedding").GetProperty("mode").GetString());
+            Assert.Equal("test-model@1024", root.GetProperty("embedding").GetProperty("model").GetString());
+            // A caixa digitada é ecoada de volta em "query" tal qual chegou (design.md §6) — a
+            // normalização de identidade acontece só na CHAVE do artefato, nunca no texto exibido.
+            Assert.Equal(queryTypedWithLeadingCapital, root.GetProperty("query").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("Embeddings__Provider", null);
+            Environment.SetEnvironmentVariable("Embeddings__PrecomputedPaths__0", null);
+            File.Delete(artifactPath);
+        }
+    }
+
     [Fact]
     public async Task GetSearch_WithLocationFarFromAnyProfessional_Returns200WithEmptyResults()
     {

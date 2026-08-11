@@ -11,10 +11,22 @@ em tempo de execução.
 |---|---|---|
 | `specialties.json` | As especialidades do corpus: `slug`, `name` (exibição) e `corpusSynonyms` — vocabulário óbvio da especialidade, usado **só** pelo teste de conformidade (`SeedCorpusTests`) para medir ING-08. `corpusSynonyms` **não é persistido** no banco. | Não — escrito à mão, versionado como dado (D7, `specs/features/met-478-modelagem-e-ingestao/design.md` §5.1). |
 | `professionals.json` | 150 profissionais sintéticos: nome fictício, especialidade, descrição de serviço, cidade/estado, coordenadas e raio de atendimento. | Não — escrito à mão, versionado como dado (D7, design §5.2). |
-| `embeddings/text-embedding-qwen3-embedding-0.6b.json` | Vetores pré-computados das descrições acima, indexados pelo hash do documento (`EmbeddingDocument.Hash`). | **Sim** — artefato gerado pela task T9 (gate humano), com o modelo decidido em `project/adr/ADR-002-provedor-de-embeddings.md` (harness). Gerado em 2026-08-10 (`bge-m3`); regenerado em 2026-08-11 com `qwen3-embedding-0.6b` (`project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md`, harness); **3 dos 150 vetores regenerados de novo em 2026-08-11 (MET-528)** por não serem reprodutíveis pelo modelo declarado — `project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md` (harness). Gerado pelo comando real `dotnet run --project src/Prumo.SeedEmbeddings` (ver "Como regenerar" abaixo). |
+| `embeddings/text-embedding-qwen3-embedding-0.6b.json` | Vetores pré-computados das descrições acima, indexados pelo hash do documento (`EmbeddingDocument.Hash`). | **Sim** — artefato gerado pela task T9 (gate humano), com o modelo decidido em `project/adr/ADR-002-provedor-de-embeddings.md` (harness). Gerado em 2026-08-10 (`bge-m3`); regenerado em 2026-08-11 com `qwen3-embedding-0.6b` (`project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md`, harness); **3 dos 150 vetores regenerados de novo em 2026-08-11 (MET-528)** por não serem reprodutíveis pelo modelo declarado — `project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md` (harness); **os 150 `sourceHash` trocados de novo em 2026-08-11 (MET-527)** — `EmbeddingDocument.Hash` passou a ser insensível à caixa (ver "Reprodutibilidade do artefato", abaixo); os 150 `embedding` **não mudaram** (texto embeddado idêntico, confirmado vetor a vetor). Gerado pelo comando real `dotnet run --project src/Prumo.SeedEmbeddings` (ver "Como regenerar" abaixo). |
 
-## Procedência do artefato de vetores (T9; modelo trocado na MET-524; 3 vetores corrigidos na MET-528)
+## Procedência do artefato de vetores (T9; modelo trocado na MET-524; 3 vetores corrigidos na MET-528; hashes regenerados na MET-527)
 
+> **Revisão MET-527 (2026-08-11).** `GET /api/search?q=Vazamento no banheiro` (primeira letra
+> maiúscula — o que um teclado de celular capitaliza por padrão) respondia 422
+> `embedding_unavailable`, enquanto `q=vazamento no banheiro` respondia 200: `EmbeddingDocument.Hash`
+> era sensível à caixa, então o `sourceHash` da consulta digitada não batia com a chave do artefato.
+> Corrigido normalizando a caixa só na CHAVE DE IDENTIDADE (`EmbeddingDocument.Hash`, case-fold
+> invariante) — o texto que efetivamente vira vetor (`EmbeddingDocument.For`) preservou a caixa
+> original, então os 150 `sourceHash` deste artefato mudaram, mas os 150 `embedding` **não**: os
+> vetores regenerados saíram **150/150 idênticos**, comparados numericamente (não por texto) contra
+> os vetores anteriores — a régua do M1 (`eval/README.md`) não mexeu. As ~20 consultas do golden set
+> (`eval/embeddings/text-embedding-qwen3-embedding-0.6b.json`) já eram todas grafadas em minúsculas;
+> nenhum `sourceHash` daquele artefato mudou.
+>
 > **Revisão MET-528 (2026-08-11, ADR-006).** Ao verificar outra issue (MET-527), reembeddar as 150
 > descrições e comparar vetor a vetor com o artefato então versionado revelou que **3 dos 150 vetores
 > não eram reprodutíveis** pelo modelo declarado — `marcos-araujo-nit-008` (cosseno 0,8105 contra o
