@@ -11,35 +11,44 @@ em tempo de execução.
 |---|---|---|
 | `specialties.json` | As especialidades do corpus: `slug`, `name` (exibição) e `corpusSynonyms` — vocabulário óbvio da especialidade, usado **só** pelo teste de conformidade (`SeedCorpusTests`) para medir ING-08. `corpusSynonyms` **não é persistido** no banco. | Não — escrito à mão, versionado como dado (D7, `specs/features/met-478-modelagem-e-ingestao/design.md` §5.1). |
 | `professionals.json` | 150 profissionais sintéticos: nome fictício, especialidade, descrição de serviço, cidade/estado, coordenadas e raio de atendimento. | Não — escrito à mão, versionado como dado (D7, design §5.2). |
-| `embeddings/text-embedding-bge-m3.json` | Vetores pré-computados das descrições acima, indexados pelo hash do documento (`EmbeddingDocument.Hash`). | **Sim** — artefato gerado pela task T9 (gate humano), com o modelo decidido em `project/adr/ADR-002-provedor-de-embeddings.md` (harness). Gerado em 2026-08-10. |
+| `embeddings/text-embedding-qwen3-embedding-0.6b.json` | Vetores pré-computados das descrições acima, indexados pelo hash do documento (`EmbeddingDocument.Hash`). | **Sim** — artefato gerado pela task T9 (gate humano), com o modelo decidido em `project/adr/ADR-002-provedor-de-embeddings.md` (harness). Gerado em 2026-08-10 (`bge-m3`); **regenerado em 2026-08-11 com `qwen3-embedding-0.6b`** — `project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md` (harness). |
 
-## Procedência do artefato de vetores (T9)
+## Procedência do artefato de vetores (T9; modelo trocado na MET-524)
 
-- **Modelo:** `bge-m3` (BAAI), servido localmente pelo LM Studio como `text-embedding-bge-m3`
-  (publisher `gpustack`, arquitetura `bert`, formato `gguf`) em `http://localhost:1234/v1`
-  (endpoint OpenAI-compatible, decisão B da ADR-002).
+> **Revisão MET-524 (2026-08-11):** o artefato do corpus (e o de consultas do golden set, `eval/`)
+> foi regenerado com `qwen3-embedding-0.6b` — o modelo `bge-m3` original reprovou a régua na T11
+> (`eval/README.md`, "Grid de calibração e limiares"). Racional completo, medições dos dois modelos
+> e disciplina de medição única em `project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md`
+> (harness). A arquitetura não muda (modelo local via LM Studio, artefato pré-computado, custo zero —
+> ADR-002) nem a dimensão (1024, MET-521) — **nenhuma migration**. Os artefatos do `bge-m3` foram
+> removidos do repo (dois modelos convivendo em `Embeddings:PrecomputedPaths` derrubam o boot por
+> `model` divergente — testado, `PrecomputedEmbeddingStoreEntriesTests`).
+
+- **Modelo:** `qwen3-embedding-0.6b` (Qwen), servido localmente pelo LM Studio como
+  `text-embedding-qwen3-embedding-0.6b` (publisher `Qwen`, arquitetura `qwen3`, formato `gguf`) em
+  `http://localhost:1234/v1` (endpoint OpenAI-compatible, decisão B da ADR-002).
 - **Quantização:** `Q8_0` — confirmada via `GET /api/v0/models` do próprio LM Studio (API estendida
   que expõe o campo `quantization`), não presumida.
 - **Dimensão:** 1024 — saída **nativa** do modelo (LM Studio ignora o parâmetro `dimensions` do
-  request; `bge-m3` não é Matryoshka/truncável — ver D3 da `spec.md`, revista na MET-521). Casa com
-  `embedding vector(1024)` (`db/migrations/0004_professional_embedding_dimension_1024.sql`).
+  request, mesmo comportamento já observado com `bge-m3`). Casa com `embedding vector(1024)`
+  (`db/migrations/0004_professional_embedding_dimension_1024.sql`) — **nenhuma migration** nova foi
+  necessária para esta troca de modelo.
 - **`model` gravado no artefato e por linha em `professionals.embedding_model`:**
-  `openai-compatible:text-embedding-bge-m3@1024` (formato de `IEmbeddingProvider.ModelId`, prefixo
-  `openai-compatible` porque o mesmo cliente serve OpenAI e LM Studio — ver
-  `OpenAiCompatibleEmbeddingProvider`).
-- **Sem prefixo de instrução.** `bge-m3` **não é da família E5** (arquitetura `bert`, linhagem BAAI
-  BGE-M3) e sua documentação (FlagEmbedding/BGE) não exige instrução/prefixo distinto para consulta
-  vs. documento — ao contrário de modelos E5 (`query: `/`passage: `). Nenhum prefixo é aplicado na
-  ingestão. Confirmado empiricamente na verificação de português da T9 (texto cru, sem prefixo,
-  produziu vizinhança semântica correta nos 3 pares testados contra o corpus real, com margem
-  confortável de similaridade sobre o distrator de especialidade errada em todos). **Se um modelo
+  `openai-compatible:text-embedding-qwen3-embedding-0.6b@1024` (formato de
+  `IEmbeddingProvider.ModelId`, prefixo `openai-compatible` porque o mesmo cliente serve OpenAI e LM
+  Studio — ver `OpenAiCompatibleEmbeddingProvider`).
+- **Sem prefixo de instrução aplicado.** Nenhum prefixo de instrução (`query:`/`passage:`, convenção
+  da família E5) é aplicado na ingestão nem na busca — mesma decisão já vigente com `bge-m3`. A
+  medição da T11 (`eval/README.md`) mostra `hitRate@3 = 1,00` no ponto configurado sem prefixo, o que
+  não sustentaria essa taxa se o modelo exigisse um prefixo simétrico não aplicado. **Se um modelo
   futuro exigir prefixo, isso precisa ser aplicado nos dois lados — ingestão e busca (MET-479) — de
   forma simétrica, e documentado aqui.**
 - **Nenhuma credencial usada.** LM Studio local não exige `Embeddings__ApiKey`.
-- **Determinismo confirmado bit-a-bit.** A geração foi repetida duas vezes contra o mesmo endpoint
-  (LM Studio local, `bge-m3`/`Q8_0`) e comparada componente a componente: **0 de 153.600 valores
-  divergentes** (150 vetores × 1024 dimensões, float32), independente do tamanho do lote de
-  requisições. Regenerar hoje, nesta máquina, reproduz o artefato exatamente — não é só a
+- **Determinismo confirmado bit-a-bit.** Verificado de duas formas: (1) o artefato de CONSULTAS do
+  golden set (`eval/embeddings/text-embedding-qwen3-embedding-0.6b.json`, mesmo endpoint/modelo) foi
+  gerado duas vezes e os dois arquivos são **idênticos byte a byte** (`diff` sem saída); (2) uma
+  chamada isolada a `POST /v1/embeddings` com o mesmo texto, repetida, devolveu a mesma resposta HTTP
+  byte a byte. Regenerar hoje, nesta máquina, reproduz o artefato exatamente — não é só a
   normalização/hash que é determinística (isso já era garantido por construção,
   `EmbeddingDocument.Hash`); a inferência do próprio modelo também é.
 
@@ -50,10 +59,10 @@ em tempo de execução.
   `design.md` §5 e as constraints de `db/migrations/0002_specialties_and_professionals.sql`
   (formato de slug, `state` em duas maiúsculas, faixas de latitude/longitude/raio, descrição com
   pelo menos 40 caracteres).
-- `embeddings/text-embedding-bge-m3.json`: suba o LM Studio servindo `text-embedding-bge-m3`
-  (quantização `Q8_0`) em `http://localhost:1234/v1`, exporte
-  `Embeddings__BaseUrl=http://localhost:1234/v1` e `Embeddings__Model=text-embedding-bge-m3` no
-  shell (nenhuma chave necessária) e rode a ingestão real com `Embeddings__Provider=openai-compatible`
+- `embeddings/text-embedding-qwen3-embedding-0.6b.json`: suba o LM Studio servindo
+  `text-embedding-qwen3-embedding-0.6b` (quantização `Q8_0`) em `http://localhost:1234/v1`, exporte
+  `Embeddings__BaseUrl=http://localhost:1234/v1` e `Embeddings__Model=text-embedding-qwen3-embedding-0.6b`
+  no shell (nenhuma chave necessária) e rode a ingestão real com `Embeddings__Provider=openai-compatible`
   apontando `ConnectionStrings__Prumo` para um banco descartável — `dotnet run --project
   src/Prumo.Seed` grava os 150 vetores reais (com `sourceHash` calculado por
   `EmbeddingDocument.Hash`, a mesma função usada na decisão de re-embedding) nas colunas

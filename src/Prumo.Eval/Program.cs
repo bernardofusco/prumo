@@ -39,7 +39,9 @@ namespace Prumo.Eval;
 public static class EvalProgram
 {
     public const string DefaultGoldenSetPath = "eval/golden-set.json";
-    public const string DefaultOutputPath = "eval/embeddings/text-embedding-bge-m3.json";
+
+    // Nome de arquivo acompanha o modelo ativo (MET-524/ADR-004: era text-embedding-bge-m3.json).
+    public const string DefaultOutputPath = "eval/embeddings/text-embedding-qwen3-embedding-0.6b.json";
 
     private const int ExitCodeInvalidInput = 2;
     private const int ExitCodeEmbeddingProviderFailure = 3;
@@ -126,7 +128,8 @@ public static class EvalProgram
 
         // Passo 2: o MESMO IEmbeddingProvider que a ingestão do corpus usa (design.md §4.4/§4.5 da
         // MET-478) — openai-compatible fala com a OpenAI real ou com um endpoint compatível (LM
-        // Studio local, como o que gerou db/seed/embeddings/text-embedding-bge-m3.json).
+        // Studio local, como o que gerou db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json
+        // — modelo trocado na MET-524/ADR-004; era text-embedding-bge-m3.json).
         Console.WriteLine(
             $"Chamando o provedor de embeddings configurado (Embeddings:Provider) para {documents.Count} documentos...");
 

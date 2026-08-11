@@ -25,7 +25,7 @@ namespace Prumo.Api.Tests.Integration;
 /// executa as 20 consultas de <c>eval/golden-set.json</c> pela MESMA camada de busca que a API usa —
 /// <see cref="ProfessionalSearchQuery"/> (recuperação, T4) + <see cref="SearchQueryEmbedder"/> (cadeia
 /// D8, T5) + <see cref="HybridRanker"/> (T1) — nunca um atalho interno. Corpus semeado com vetores
-/// REAIS (<c>db/seed/embeddings/text-embedding-bge-m3.json</c>, T9 da MET-478) via
+/// REAIS (<c>db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json</c>, T9 da MET-478) via
 /// <see cref="PrecomputedEmbeddingProvider"/>, não <c>HashingEmbeddingProvider</c>: um eval que mede
 /// contra bag-of-words não mede a tese do case.
 ///
@@ -61,17 +61,24 @@ namespace Prumo.Api.Tests.Integration;
 public sealed class GoldenSetEvalTests(PostgresIntegrationFixture fixture, ITestOutputHelper output)
 {
     /// <summary>
-    /// L2 (spec.md "Medição do Case → Limiares"): a medição REAL desta task (T11) mostra que
-    /// <b>nenhum</b> dos 18 pontos do grid declarado satisfaz L1 (hitRate@3=1,00) e L3 (100% ordem)
-    /// simultaneamente (ver <see cref="ConfiguredWeights_AreNotDominatedByTheDeclaredGrid"/> e o
-    /// relatório da T11) — a regra de calibração da spec ("descartar quem viola L1/L3 → maior
-    /// meanPrecision@5...") não tem um vencedor para escolher, então o piso **não pode ser subido**
-    /// (a "regra de calibração do L2" só autoriza subir a régua a partir de um ponto medido que já
-    /// satisfaça L1/L3 — não existe aqui). Este é o piso FIXADO PELA SPEC (0,70), inalterado — nunca
-    /// um número inventado por esta task. A decisão (corpus/consultas/provedor/dimensão, ou
-    /// ratificar um piso menor) é do dono, via ADR — ver relatório da T11.
+    /// L2 (spec.md "Medição do Case → Limiares"): piso original da spec era 0,70, "só pode SUBIR" —
+    /// mas a T11 reexecutada (MET-524, corpus vetorizado com qwen3-embedding-0.6b) mediu que o ÚNICO
+    /// ponto do grid elegível a L1 (hitRate@3=1,00) e L3 (100% ordem) simultaneamente
+    /// (w_s=0,9, τ=5 — ver <see cref="ConfiguredWeights_AreNotDominatedByTheDeclaredGrid"/>) fica em
+    /// meanPrecision@5 = 0,41, abaixo de 0,70. Leave-one-out sobre o corpus real (150 descrições,
+    /// cada uma como consulta contra as outras 149) mede meanPrecision@5 = 0,7173 — a evidência de
+    /// que o teto é a distintividade do corpus entre especialidades, não o modelo nem a fórmula (ver
+    /// eval/README.md, "Hipóteses"). O dono ratificou, via
+    /// <c>project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md</c> (repo do harness,
+    /// que supersede PARCIALMENTE a ADR-003 só neste ponto), um piso menor derivado pela MESMA regra
+    /// de arredondamento da spec (spec.md:161, para baixo em passos de 0,05) aplicada ao valor medido:
+    /// <c>floor(0,41 / 0,05) × 0,05 = 0,40</c>. A partir de agora L2 deixa de ser ambição de
+    /// qualidade — a métrica está limitada pela composição do corpus, não pelo ranking — e passa a
+    /// ser GUARDA DE REGRESSÃO: existe para pegar uma mudança futura que derrube meanPrecision@5, não
+    /// para certificar "boa o bastante" em sentido absoluto. Recalibrar este valor de novo exige uma
+    /// ADR nova que supersede a ADR-005 — nunca edição desta constante.
     /// </summary>
-    private const double L2Threshold = 0.70;
+    private const double L2Threshold = 0.40;
 
     /// <summary>Tolerância de empate da regra de escolha (spec.md "Medição do Case → Calibração dos pesos").</summary>
     private const double TieTolerance = 0.02;
@@ -89,10 +96,10 @@ public sealed class GoldenSetEvalTests(PostgresIntegrationFixture fixture, ITest
     private static readonly string ProfessionalsPath = Path.Combine(RepoRoot, "db", "seed", "professionals.json");
 
     private static readonly string CorpusEmbeddingsPath =
-        Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-bge-m3.json");
+        Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-qwen3-embedding-0.6b.json");
 
     private static readonly string QueryEmbeddingsPath =
-        Path.Combine(RepoRoot, "eval", "embeddings", "text-embedding-bge-m3.json");
+        Path.Combine(RepoRoot, "eval", "embeddings", "text-embedding-qwen3-embedding-0.6b.json");
 
     private static readonly string AppSettingsPath = Path.Combine(RepoRoot, "src", "Prumo.Api", "appsettings.json");
 
@@ -222,9 +229,7 @@ public sealed class GoldenSetEvalTests(PostgresIntegrationFixture fixture, ITest
         output.WriteLine(Fmt($"Melhor meanPrecision@5 entre os elegíveis: {bestMeanPrecision:0.0000}. Ponto configurado (w_s={configuredPoint.SemanticWeight:0.0}, tau={configuredPoint.DistanceDecayKm:0}): {configuredMeasurement!.MeanPrecisionAt5:0.0000}."));
 
         Assert.True(configuredMeasurement.MeetsL1 && configuredMeasurement.MeetsL3,
-            "O ponto CONFIGURADO (appsettings.json:Ranking) viola L1 ou L3 — está fora do subconjunto " +
-            "elegível do grid (que hoje está VAZIO — ver a asserção anterior). Recalibrar é ADR-003 " +
-            "nova (spec.md, 'Congelamento'), nunca ajuste silencioso de peso.");
+            Fmt($"O ponto CONFIGURADO (appsettings.json:Ranking, w_s={configuredPoint.SemanticWeight:0.0}, tau={configuredPoint.DistanceDecayKm:0}) viola L1 ou L3 — está fora do subconjunto elegível do grid ({eligible.Count} de 18 ponto(s) elegível(is) nesta medição; ver a tabela acima para saber quais). Recalibrar é ADR-003 nova (spec.md, 'Congelamento'), nunca ajuste silencioso de peso."));
 
         Assert.True(bestMeanPrecision - configuredMeasurement.MeanPrecisionAt5 <= TieTolerance,
             Fmt($"O ponto configurado (meanPrecision@5={configuredMeasurement.MeanPrecisionAt5:0.0000}) está a mais de {TieTolerance:0.00} do melhor do grid ({bestMeanPrecision:0.0000}) — a calibração mudou; isso é recalibração via ADR-003 nova (spec.md, 'Congelamento'), não ajuste silencioso de peso."));
@@ -274,7 +279,7 @@ public sealed class GoldenSetEvalTests(PostgresIntegrationFixture fixture, ITest
             {
                 throw new InvalidOperationException(
                     $"Consulta '{query.Id}' ('{query.Text}') não resolveu para embedding.mode=precomputed " +
-                    $"(obteve '{embeddingResult.Mode}'). eval/embeddings/text-embedding-bge-m3.json deveria " +
+                    $"(obteve '{embeddingResult.Mode}'). eval/embeddings/text-embedding-qwen3-embedding-0.6b.json deveria " +
                     "cobrir TODA consulta do golden set (T10, BSC-20, GoldenSetEmbeddingsArtifactTests) — " +
                     "golden-set.json mudou sem regenerar o artefato?");
             }

@@ -29,7 +29,7 @@ public sealed class SeedCorpusTests
     /// <summary>Artefato pré-computado versionado pela T9 (MET-478, gate humano) — ver "guarda do
     /// artefato de embeddings" abaixo.</summary>
     private static readonly string EmbeddingsArtifactPath =
-        Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-bge-m3.json");
+        Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-qwen3-embedding-0.6b.json");
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -340,7 +340,8 @@ public sealed class SeedCorpusTests
 
     /// <summary>
     /// Achado do Reviewer (T9/MET-478): NENHUM teste carregava o artefato de vetores versionado
-    /// (<c>db/seed/embeddings/text-embedding-bge-m3.json</c>) — sem esta guarda, editar uma
+    /// (<c>db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json</c>, modelo trocado na
+    /// MET-524/ADR-004 — era <c>text-embedding-bge-m3.json</c>) — sem esta guarda, editar uma
     /// <c>serviceDescription</c> sem regenerar o artefato deixa LINT + TEST + INTEGRATION verdes, e a
     /// quebra só aparece na ingestão de quem clona o repo (<c>PrecomputedEmbeddingProvider</c> lança
     /// em runtime, contra banco real — <c>SeedDesyncTests</c>, <c>Category=Integration</c>, cobre

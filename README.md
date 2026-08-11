@@ -28,12 +28,15 @@ prumo/
 ├── Directory.Build.props   # net10.0, Nullable, TreatWarningsAsErrors, EnforceCodeStyleInBuild
 ├── .editorconfig           # fonte da verdade do `dotnet format`
 ├── .gitattributes          # normaliza EOL (LF) independente do SO de quem clona
-├── src/Prumo.Api/          # Minimal API (.NET 10): GET /api/health, GET /api/health/db
+├── src/Prumo.Api/          # Minimal API (.NET 10): health, GET /api/search(/options) (M1)
 ├── src/Prumo.Seed/         # Console de ingestão (M1): popula specialties/professionals + embeddings
-├── tests/Prumo.Api.Tests/  # xUnit; Category=Integration usa Testcontainers
-├── frontend/               # React + TypeScript (Vite) + Vitest — indicador de status da API
+├── src/Prumo.Eval/         # Console que gera eval/embeddings/<modelo>.json (vetores das consultas do golden set)
+├── tests/Prumo.Api.Tests/  # xUnit; Category=Integration usa Testcontainers; Eval/ mede o golden set
+├── frontend/               # React + TypeScript (Vite) + Vitest — status da API + tela de busca híbrida
 ├── db/migrations/          # SQL forward-only — as constraints são parte da história
 ├── db/seed/                # Corpus de demonstração 100% fictício (specialties.json, professionals.json)
+├── db/seed/embeddings/     # Vetores REAIS pré-computados do corpus (versionado, ver "Sem provedor…")
+├── eval/                   # A régua do M1: golden-set.json, embeddings/ das consultas, README.md
 ├── compose.yaml            # Postgres + pgvector (+ cube/earthdistance) para dev local
 ├── .env.example            # nomes de variáveis (nunca valores reais)
 └── .github/workflows/ci.yml  # CI (espelha os gates do harness)
@@ -46,13 +49,30 @@ prumo/
 > `GET /api/search/options`, a função pura de ranking (`Search/Ranking/HybridRanker`), a recuperação
 > de candidatos via `<=>`/`earthdistance` e a tela em React estão implementados e testados (ver seção
 > "Busca", abaixo). **Provedor de embeddings decidido e gerado** (ADR-002, `Accepted` desde
-> 2026-08-08; artefato do corpus gerado na T9, 2026-08-10 — `bge-m3` via LM Studio local, sem custo,
-> sem chave): `db/seed/embeddings/text-embedding-bge-m3.json` está versionado e é o caminho padrão
-> (`Embeddings__Provider=precomputed`). O que ainda falta é a **medição contra o golden set**
-> (BSC-15..18) e a **ratificação dos pesos** (BSC-20/21, ADR-003) — as duas dependem do artefato de
-> CONSULTAS do golden set (`eval/embeddings/<modelo>.json`, MET-479/T10, ainda não gerado), não mais
-> de nenhuma decisão de provedor pendente. Até T10 rodar, buscar por uma das 150 descrições literais
-> do corpus funciona com vetor semântico real; texto livre arbitrário responde `422` (ver seção
+> 2026-08-08; artefato do corpus gerado na T9, 2026-08-10; **modelo trocado de `bge-m3` para
+> `qwen3-embedding-0.6b` na MET-524, 2026-08-11 — `project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md`
+> no repo do harness — via LM Studio local, sem custo, sem chave, mesma dimensão, sem migration**):
+> `db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json` e
+> `eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (consultas do golden set, T10) estão
+> versionados e são o caminho padrão (`Embeddings__Provider=precomputed`). **A medição contra o
+> golden set (T11) rodou duas vezes** (BSC-15..18) — a primeira, contra `bge-m3`, reprovou
+> (`hitRate@3 = 0,75`); a segunda, contra `qwen3-embedding-0.6b` e com a consulta `gs-07` revisada,
+> fechou L1 e L4 (`hitRate@3 = 1,00`) mas não fechava L2 contra o piso ORIGINAL da spec
+> (`meanPrecision@5 ≥ 0,70` — o melhor ponto do grid mede 0,41). Leave-one-out sobre o corpus real
+> (150 descrições, cada uma como consulta contra as outras 149) mostrou por que: `meanPrecision@5 =
+> 0,7173` mesmo no cenário mais favorável concebível — o teto é a distintividade do corpus entre
+> especialidades, não o modelo nem a fórmula (ver `eval/README.md`, "Grid de calibração e limiares").
+> **O dono ratificou, via `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`
+> (repo do harness, 2026-08-11), um piso `L2 = 0,40`** — derivado mecanicamente do valor medido no
+> único ponto elegível a L1/L3 pela mesma regra de arredondamento que a spec já declarava — e os pesos
+> que a regra de escolha da spec já apontava (`SemanticWeight = 0,9`, `ProximityWeight = 0,1`,
+> `DistanceDecayKm = 5`), agora gravados em `appsettings.json` **e registrados como fato** no corpo de
+> `project/adr/ADR-003-formula-do-ranking-hibrido.md` (repo do harness) — que **permanece `Proposed`**:
+> a promoção formal a `Accepted` é decisão do dono, ainda não tomada (a ADR-005 é explícita em não a
+> tomar em nome dele). **A régua do M1 fecha**: L1, L2 (revisado), L3 e L4 satisfeitos. Buscar por uma
+> das 150 descrições literais do
+> corpus, ou por qualquer uma das ~20 consultas do golden set, funciona com vetor semântico real;
+> texto livre arbitrário fora dessa lista responde `422` (ver seção
 > "Busca" → "Sem provedor de embeddings configurado"). O agendamento sob concorrência é o M2. Este
 > projeto é desenvolvido com o harness de agentes [`main-brain`](https://github.com/bernardofusco)
 > (adapter `project-prumo`): specs aprovadas por humano, implementação por agentes com gates de
@@ -120,7 +140,7 @@ reais, sem chave, sem LM Studio no ar):
 ```sh
 export ConnectionStrings__Prumo="Host=localhost;Port=5432;Database=prumo;Username=prumo_dev;Password=prumo_dev_only_change_me"
 export Embeddings__Provider=precomputed
-export Embeddings__PrecomputedPaths__0=db/seed/embeddings/text-embedding-bge-m3.json
+export Embeddings__PrecomputedPaths__0=db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json
 dotnet run --project src/Prumo.Seed
 ```
 
@@ -135,9 +155,9 @@ Ingestão concluída.
   Embeddings:     150 gerado(s), 0 pulado(s) (já sincronizado(s)).
 ```
 
-Cada profissional fica com `embedding_model = openai-compatible:text-embedding-bge-m3@1024` —
-vetores **reais** (`bge-m3`, gerados uma vez via LM Studio local, T9), não o placeholder
-determinístico. Rodar de novo é seguro e **não** duplica linha nem chama rede nenhuma à toa: o
+Cada profissional fica com `embedding_model = openai-compatible:text-embedding-qwen3-embedding-0.6b@1024` —
+vetores **reais** (`qwen3-embedding-0.6b`, via LM Studio local — modelo trocado na MET-524; gerados
+uma vez, T9), não o placeholder determinístico. Rodar de novo é seguro e **não** duplica linha nem chama rede nenhuma à toa: o
 comando faz upsert por `slug` (constraint `UNIQUE`, não um `SELECT` prévio) e só reembeda quando o
 texto ou o provider configurado mudou — provado por `SeedIdempotencyTests` (segunda execução: zero
 chamadas ao provider). Rodando o mesmo bloco de novo, a saída passa a ser:
@@ -159,8 +179,8 @@ O provider é escolhido por `Embeddings__Provider` (ver `.env.example`), com tr�
 | Provider | Quando usar | Precisa de rede/chave? |
 |---|---|---|
 | `hashing` | Dev e testes rápidos, sem depender do artefato. Determinístico, sem rede, sem arquivo. **Não** é embedding semântico — não resolve "vazamento no banheiro → encanador"; existe para rodar todo o pipeline (schema, idempotência, consulta `<=>`) sem custo nenhum. **Não há default no código para este valor** — a variável precisa estar exportada. | Não |
-| `precomputed` | **Caminho padrão desde a T9** (usado nos dois blocos acima): `db/seed/embeddings/text-embedding-bge-m3.json` já existe, versionado — lê o arquivo e resolve o vetor de cada documento pelo hash do texto. Se a descrição mudou sem o artefato ser regenerado, a ingestão falha alto (`exit 3`) em vez de gravar um vetor errado. | Não (mas exige o arquivo, via `Embeddings__PrecomputedPaths__0=...`, como acima) |
-| `openai-compatible` | Foi assim que o artefato `precomputed` foi gerado (T9, LM Studio local servindo `bge-m3`) e é como se regenera (corpus mudou, ou troca de modelo — ver `db/seed/README.md`); também embeda a consulta do usuário em runtime na busca (seção "Busca", abaixo), quando o texto digitado não está no artefato. | Sim — `Embeddings__BaseUrl` e `Embeddings__Model` sempre; `Embeddings__ApiKey` só contra a OpenAI (LM Studio local não exige) |
+| `precomputed` | **Caminho padrão desde a T9** (usado nos dois blocos acima): `db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json` já existe, versionado — lê o arquivo e resolve o vetor de cada documento pelo hash do texto. Se a descrição mudou sem o artefato ser regenerado, a ingestão falha alto (`exit 3`) em vez de gravar um vetor errado. | Não (mas exige o arquivo, via `Embeddings__PrecomputedPaths__0=...`, como acima) |
+| `openai-compatible` | Foi assim que o artefato `precomputed` foi gerado (T9, LM Studio local servindo `qwen3-embedding-0.6b`) e é como se regenera (corpus mudou, ou troca de modelo — ver `db/seed/README.md`); também embeda a consulta do usuário em runtime na busca (seção "Busca", abaixo), quando o texto digitado não está no artefato. | Sim — `Embeddings__BaseUrl` e `Embeddings__Model` sempre; `Embeddings__ApiKey` só contra a OpenAI (LM Studio local não exige) |
 
 Dois caminhos apontam para arquivos alternativos em vez do corpus real de `db/seed/` — pensados para
 teste apontar para uma fixture própria sem escrever no corpus versionado, mas disponíveis como
@@ -223,8 +243,8 @@ cada tecla). Resumindo o fluxo completo do zero:
 cp .env.example .env && docker compose up -d                       # banco
 export ConnectionStrings__Prumo="Host=localhost;Port=5432;Database=prumo;Username=prumo_dev;Password=prumo_dev_only_change_me"
 export Embeddings__Provider=precomputed
-export Embeddings__PrecomputedPaths__0=db/seed/embeddings/text-embedding-bge-m3.json
-dotnet run --project src/Prumo.Seed                                 # seed (vetores reais, bge-m3)
+export Embeddings__PrecomputedPaths__0=db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json
+dotnet run --project src/Prumo.Seed                                 # seed (vetores reais, qwen3-embedding-0.6b)
 dotnet run --project src/Prumo.Api                                  # API em http://localhost:5096
 npm --prefix frontend run dev                                       # frontend em http://localhost:5173
 ```
@@ -260,36 +280,68 @@ A demo pública roda **sem chave nenhuma**. O comportamento de `GET /api/search`
 | `openai-compatible` | usa o artefato pré-computado (grátis, determinístico), `embedding.mode: "precomputed"` | chama o provedor configurado, `embedding.mode: "provider"` |
 | `hashing` | — (o modo degradado não olha o artefato) | usa o provider local determinístico, `embedding.mode: "degraded"`, com aviso visível na tela |
 
-**Estado real deste repo (pós-T9, 2026-08-10):** `db/seed/embeddings/text-embedding-bge-m3.json` (o
-artefato do CORPUS — 150 profissionais) existe e é o default de `Embeddings__PrecomputedPaths__0`
-em `.env.example`, com `Embeddings__Provider=precomputed`. O que isso destrava e o que **não**
-destrava, sem chave nenhuma:
+**Estado real deste repo (pós-T10, MET-524 2026-08-11):** os dois artefatos —
+`db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json` (CORPUS, 150 profissionais) e
+`eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (as ~20 consultas do golden set) — existem
+e são o default de `Embeddings__PrecomputedPaths__0`/`__1` em `.env.example`, com
+`Embeddings__Provider=precomputed`. O que isso destrava e o que **não** destrava, sem chave nenhuma:
 
 - **Digitar uma das 150 descrições de `db/seed/professionals.json` literalmente** (mesmo texto que
-  gerou o vetor daquele profissional) funciona: o hash bate no artefato, `embedding.mode:
-  "precomputed"`, resultado semântico real — é como inspecionar o pipeline ponta a ponta sem chave.
-- **Digitar texto livre** (ex.: "vazamento no banheiro", ou qualquer coisa que não seja uma dessas
-  150 descrições exatas) responde **HTTP 422** `embedding_unavailable`: o artefato de CONSULTAS do
-  golden set (`eval/embeddings/<modelo>.json`) nasce só na MET-479/T10, e sem ele não há vetor pra
-  nenhum texto arbitrário. **`GET /api/search/options` também devolve `exampleQueries: []`** hoje —
-  as "consultas de demonstração" citadas na mensagem de erro ainda não existem para clicar; T10 é
-  quem preenche as duas coisas juntas (mesmo artefato).
-- Para buscar por texto livre **agora**, configure `Embeddings__Provider=openai-compatible` apontando
-  para um LM Studio local (ou outro endpoint compatível) — a MESMA configuração usada para gerar o
-  artefato do corpus (ver seção "Seed").
+  gerou o vetor daquele profissional), ou qualquer uma das **~20 consultas de
+  `eval/golden-set.json`** (inclusive as que `GET /api/search/options` devolve em `exampleQueries`),
+  funciona: o hash bate no artefato, `embedding.mode: "precomputed"`, resultado semântico real.
+- **Digitar texto livre** fora dessas listas responde **HTTP 422** `embedding_unavailable`, com a
+  lista das consultas de demonstração no corpo — comportamento correto por design (D8), não bug.
+- Para buscar por texto livre **arbitrário**, configure `Embeddings__Provider=openai-compatible`
+  apontando para um LM Studio local (ou outro endpoint compatível) — a MESMA configuração usada para
+  gerar os artefatos (ver seção "Seed").
 
 #### A medição (o golden set)
 
 O ranking é medido contra `eval/golden-set.json` — 20 consultas em linguagem de cliente, com
 resultado esperado, versionadas no repo. O que a régua mede, os limiares, o grid de calibração e a
-composição verificada por teste estão documentados em **[`eval/README.md`](eval/README.md)**; a
-tabela de resultados (só-semântica vs. híbrido, os 18 pontos do grid, os pesos escolhidos) fica **em
-branco até a medição rodar de verdade** — não mais por falta de decisão de provedor (ADR-002 é
-`Accepted` desde 2026-08-08, `bge-m3` via LM Studio local, artefato do corpus já versionado, T9), mas
-porque o artefato de **consultas** do golden set (`eval/embeddings/<modelo>.json`) e a medição em si
-são a MET-479/T10, ainda não executada. Sem ele, o teste do golden set contra Postgres
-(`Category=Integration`, `GoldenSetEvalTests`) não existe ainda neste repo: a régua está pronta
-(consultas, métricas, conformidade), mas não há número medido para publicar aqui até T10 rodar.
+composição verificada por teste estão documentados em **[`eval/README.md`](eval/README.md)**. A
+medição (`Category=Integration`, `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`) **rodou
+duas vezes**: contra `bge-m3` (2026-08-10, reprovou — `hitRate@3 = 0,75`) e, depois da troca de
+modelo e da revisão da consulta `gs-07` (MET-524, 2026-08-11, `project/adr/ADR-004-...md` no repo do
+harness), contra `qwen3-embedding-0.6b` — que fechou L1 e L4 (`hitRate@3 = 1,00`) mas não fechava L2
+contra o piso ORIGINAL da spec (`meanPrecision@5 ≥ 0,70`; melhor ponto do grid: 0,41). O dono
+ratificou um piso menor (`L2 = 0,40`, arredondamento mecânico do valor medido) e os pesos apontados
+pela regra de escolha (`w_s = 0,9`, `τ = 5`) via `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`
+(repo do harness, 2026-08-11) — **a régua do M1 fecha** com esses valores gravados em
+`appsettings.json`. A tabela completa (18 pontos, só-semântica vs. híbrido), o racional da mudança de
+piso e as mitigações contra sobreajuste estão em `eval/README.md`, "Grid de calibração e limiares".
+
+**Só-semântica vs. híbrido vs. baseline lexical** — o resumo que sustenta a tese do case (tabela
+completa dos 18 pontos, com todos os `τ`, em `eval/README.md`). As linhas "só-semântica" e "híbrido"
+vêm da mesma suíte (`GoldenSetEvalTests`, `Category=Integration`) contra Postgres+pgvector real
+(Testcontainers), vetores `qwen3-embedding-0.6b`, verificadas nesta T12 rodando o teste de novo (não
+copiadas de outro documento). A linha "baseline lexical" vem de um instrumento diferente —
+`tests/Prumo.Api.Tests/Eval/LexicalBaseline.cs`, determinístico, sem banco e sem vetor (o análogo
+direto de `WHERE description ILIKE '%palavra%'` somado por termo) — recalculada de forma independente
+nesta T12 e conferida contra o número já publicado em `eval/README.md`; `meanPrecision@5` e ordem não
+se aplicam a esse instrumento (colunas marcadas abaixo):
+
+| Ranking | `hitRate@3` | `meanPrecision@5` | ordem (`expectedRankedAbove`) | fecha L1 + L3? |
+|---|---:|---:|---:|---|
+| Baseline lexical (`LIKE '%palavra%'`, referência — sem vetor, `LexicalBaseline.cs`) | 0,60 (12/20) | não avaliado por esta métrica | não avaliado | não é candidato ao ranking |
+| Só-semântica (`w_s = 1,0`, `w_p = 0`, qualquer `τ`) | 1,00 | 0,41 | 1/2 | **não** — falha L3 |
+| **Híbrido — adotado** (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`) | **1,00** | **0,41** | **2/2** | **sim** |
+
+A diferença entre só-semântica e híbrido não aparece em `hitRate@3` (as duas acertam 100% das
+consultas) nem em `meanPrecision@5` (empatadas em 0,41) — aparece na **ordem**: sem proximidade no
+score, os dois pares `expectedRankedAbove` do golden set (`gs-16`, `gs-17`) não têm como ser
+desempatados por distância, e a busca só-semântica reprova L3. É por isso que o ranking v1 é híbrido,
+mesmo com um peso de proximidade pequeno (0,1): o suficiente para resolver a ordem sem alterar quantas
+buscas acertam a especialidade certa. Contra a busca semântica (híbrida ou só-semântica), o baseline
+lexical erra 8 das 20 consultas no top-3 — é a folga que prova que o golden set não está apenas
+premiando quem repete a palavra da consulta.
+
+`meanPrecision@5` (o quão "limpo" é o top-5 inteiro) tem piso próprio, revisado de 0,70 para 0,40
+(ADR-005) — não porque o ranking piorou, mas porque a composição do corpus (15 especialidades de
+vocabulário de "serviço doméstico" próximo entre si) tem um teto medido de ≈ 0,61 mesmo no melhor caso
+possível (leave-one-out sobre as 150 descrições reais do corpus); ver `eval/README.md`, "Piso `L2`
+baixado de 0,70 para 0,40", para a medição completa e o racional.
 
 ### Testes e gates
 
