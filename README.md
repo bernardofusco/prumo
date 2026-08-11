@@ -31,6 +31,7 @@ prumo/
 ├── src/Prumo.Api/          # Minimal API (.NET 10): health, GET /api/search(/options) (M1)
 ├── src/Prumo.Seed/         # Console de ingestão (M1): popula specialties/professionals + embeddings
 ├── src/Prumo.Eval/         # Console que gera eval/embeddings/<modelo>.json (vetores das consultas do golden set)
+├── src/Prumo.SeedEmbeddings/ # Console que gera db/seed/embeddings/<modelo>.json (vetores do corpus, sem banco)
 ├── tests/Prumo.Api.Tests/  # xUnit; Category=Integration usa Testcontainers; Eval/ mede o golden set
 ├── frontend/               # React + TypeScript (Vite) + Vitest — status da API + tela de busca híbrida
 ├── db/migrations/          # SQL forward-only — as constraints são parte da história
@@ -58,19 +59,25 @@ prumo/
 > golden set (T11) rodou duas vezes** (BSC-15..18) — a primeira, contra `bge-m3`, reprovou
 > (`hitRate@3 = 0,75`); a segunda, contra `qwen3-embedding-0.6b` e com a consulta `gs-07` revisada,
 > fechou L1 e L4 (`hitRate@3 = 1,00`) mas não fechava L2 contra o piso ORIGINAL da spec
-> (`meanPrecision@5 ≥ 0,70` — o melhor ponto do grid mede 0,41). Leave-one-out sobre o corpus real
-> (150 descrições, cada uma como consulta contra as outras 149) mostrou por que: `meanPrecision@5 =
-> 0,7173` mesmo no cenário mais favorável concebível — o teto é a distintividade do corpus entre
-> especialidades, não o modelo nem a fórmula (ver `eval/README.md`, "Grid de calibração e limiares").
-> **O dono ratificou, via `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`
+> (`meanPrecision@5 ≥ 0,70` — o melhor ponto do grid mediu 0,41 naquela medição). Leave-one-out sobre
+> o corpus real (150 descrições, cada uma como consulta contra as outras 149) mostrou por que:
+> `meanPrecision@5 = 0,7173` mesmo no cenário mais favorável concebível — o teto é a distintividade do
+> corpus entre especialidades, não o modelo nem a fórmula (ver `eval/README.md`, "Grid de calibração e
+> limiares"). **O dono ratificou, via `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`
 > (repo do harness, 2026-08-11), um piso `L2 = 0,40`** — derivado mecanicamente do valor medido no
 > único ponto elegível a L1/L3 pela mesma regra de arredondamento que a spec já declarava — e os pesos
 > que a regra de escolha da spec já apontava (`SemanticWeight = 0,9`, `ProximityWeight = 0,1`,
 > `DistanceDecayKm = 5`), agora gravados em `appsettings.json` **e registrados como fato** no corpo de
 > `project/adr/ADR-003-formula-do-ranking-hibrido.md` (repo do harness) — que **permanece `Proposed`**:
 > a promoção formal a `Accepted` é decisão do dono, ainda não tomada (a ADR-005 é explícita em não a
-> tomar em nome dele). **A régua do M1 fecha**: L1, L2 (revisado), L3 e L4 satisfeitos. Buscar por uma
-> das 150 descrições literais do
+> tomar em nome dele). **Vetores do corpus corrigidos (2026-08-11, MET-528).** 3 dos 150 vetores do
+> artefato do corpus não eram reprodutíveis pelo modelo declarado
+> (`project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md`, repo do harness) —
+> regenerados e travados por verificação executável (`tests/Prumo.Api.Tests/SeedCorpusTests.cs` +
+> `tests/Prumo.Api.Tests/EmbeddingsArtifactReproducibilityTests.cs`). A régua remedida:
+> `meanPrecision@5 = 0,42` (era 0,41) no mesmo ponto adotado; **o piso `L2 = 0,40` NÃO mudou**
+> (`floor(0,42 / 0,05) × 0,05 = 0,40` — a mesma regra, aplicada ao valor novo). **A régua do M1
+> fecha**: L1, L2 (revisado), L3 e L4 satisfeitos. Buscar por uma das 150 descrições literais do
 > corpus, ou por qualquer uma das ~20 consultas do golden set, funciona com vetor semântico real;
 > texto livre arbitrário fora dessa lista responde `422` (ver seção
 > "Busca" → "Sem provedor de embeddings configurado"). O agendamento sob concorrência é o M2. Este
@@ -305,31 +312,37 @@ medição (`Category=Integration`, `tests/Prumo.Api.Tests/Integration/GoldenSetE
 duas vezes**: contra `bge-m3` (2026-08-10, reprovou — `hitRate@3 = 0,75`) e, depois da troca de
 modelo e da revisão da consulta `gs-07` (MET-524, 2026-08-11, `project/adr/ADR-004-...md` no repo do
 harness), contra `qwen3-embedding-0.6b` — que fechou L1 e L4 (`hitRate@3 = 1,00`) mas não fechava L2
-contra o piso ORIGINAL da spec (`meanPrecision@5 ≥ 0,70`; melhor ponto do grid: 0,41). O dono
-ratificou um piso menor (`L2 = 0,40`, arredondamento mecânico do valor medido) e os pesos apontados
-pela regra de escolha (`w_s = 0,9`, `τ = 5`) via `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`
-(repo do harness, 2026-08-11) — **a régua do M1 fecha** com esses valores gravados em
-`appsettings.json`. A tabela completa (18 pontos, só-semântica vs. híbrido), o racional da mudança de
-piso e as mitigações contra sobreajuste estão em `eval/README.md`, "Grid de calibração e limiares".
+contra o piso ORIGINAL da spec (`meanPrecision@5 ≥ 0,70`; melhor ponto do grid mediu 0,41 naquela
+medição). O dono ratificou um piso menor (`L2 = 0,40`, arredondamento mecânico do valor medido) e os
+pesos apontados pela regra de escolha (`w_s = 0,9`, `τ = 5`) via
+`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` (repo do harness, 2026-08-11)
+— **a régua do M1 fecha** com esses valores gravados em `appsettings.json`. **3 dos 150 vetores do
+artefato do corpus se revelaram irreprodutíveis pelo modelo declarado e foram corrigidos** (MET-528,
+2026-08-11, `project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md` no repo do
+harness) — a régua remedida com o artefato corrigido: `meanPrecision@5 = 0,42` no ponto adotado
+(era 0,41); o piso `L2 = 0,40` **não mudou** (a mesma regra de arredondamento, aplicada a 0,42,
+continua dando 0,40). A tabela completa (18 pontos, só-semântica vs. híbrido), o racional da mudança
+de piso e as mitigações contra sobreajuste estão em `eval/README.md`, "Grid de calibração e limiares".
 
 **Só-semântica vs. híbrido vs. baseline lexical** — o resumo que sustenta a tese do case (tabela
 completa dos 18 pontos, com todos os `τ`, em `eval/README.md`). As linhas "só-semântica" e "híbrido"
 vêm da mesma suíte (`GoldenSetEvalTests`, `Category=Integration`) contra Postgres+pgvector real
-(Testcontainers), vetores `qwen3-embedding-0.6b`, verificadas nesta T12 rodando o teste de novo (não
-copiadas de outro documento). A linha "baseline lexical" vem de um instrumento diferente —
-`tests/Prumo.Api.Tests/Eval/LexicalBaseline.cs`, determinístico, sem banco e sem vetor (o análogo
-direto de `WHERE description ILIKE '%palavra%'` somado por termo) — recalculada de forma independente
-nesta T12 e conferida contra o número já publicado em `eval/README.md`; `meanPrecision@5` e ordem não
-se aplicam a esse instrumento (colunas marcadas abaixo):
+(Testcontainers), vetores `qwen3-embedding-0.6b` (artefato corrigido, MET-528), reexecutadas para este
+milestone (não copiadas de outro documento). A linha "baseline lexical" vem de um instrumento
+diferente — `tests/Prumo.Api.Tests/Eval/LexicalBaseline.cs`, determinístico, sem banco e sem vetor (o
+análogo direto de `WHERE description ILIKE '%palavra%'` somado por termo) — inalterada pela correção
+de vetores (não depende de embedding nenhum) e conferida contra o número já publicado em
+`eval/README.md`; `meanPrecision@5` e ordem não se aplicam a esse instrumento (colunas marcadas
+abaixo):
 
 | Ranking | `hitRate@3` | `meanPrecision@5` | ordem (`expectedRankedAbove`) | fecha L1 + L3? |
 |---|---:|---:|---:|---|
 | Baseline lexical (`LIKE '%palavra%'`, referência — sem vetor, `LexicalBaseline.cs`) | 0,60 (12/20) | não avaliado por esta métrica | não avaliado | não é candidato ao ranking |
-| Só-semântica (`w_s = 1,0`, `w_p = 0`, qualquer `τ`) | 1,00 | 0,41 | 1/2 | **não** — falha L3 |
-| **Híbrido — adotado** (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`) | **1,00** | **0,41** | **2/2** | **sim** |
+| Só-semântica (`w_s = 1,0`, `w_p = 0`, qualquer `τ`) | 1,00 | 0,42 | 1/2 | **não** — falha L3 |
+| **Híbrido — adotado** (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`) | **1,00** | **0,42** | **2/2** | **sim** |
 
 A diferença entre só-semântica e híbrido não aparece em `hitRate@3` (as duas acertam 100% das
-consultas) nem em `meanPrecision@5` (empatadas em 0,41) — aparece na **ordem**: sem proximidade no
+consultas) nem em `meanPrecision@5` (empatadas em 0,42) — aparece na **ordem**: sem proximidade no
 score, os dois pares `expectedRankedAbove` do golden set (`gs-16`, `gs-17`) não têm como ser
 desempatados por distância, e a busca só-semântica reprova L3. É por isso que o ranking v1 é híbrido,
 mesmo com um peso de proximidade pequeno (0,1): o suficiente para resolver a ordem sem alterar quantas
