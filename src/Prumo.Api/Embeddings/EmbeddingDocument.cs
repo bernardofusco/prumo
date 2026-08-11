@@ -37,19 +37,47 @@ public static class EmbeddingDocument
     }
 
     /// <summary>
-    /// SHA-256 de <paramref name="document"/> em UTF-8, hex minúsculo. Escolhido por ser estável
-    /// entre plataformas e versões do runtime — ao contrário de <see cref="string.GetHashCode()"/>,
-    /// que é randomizado por processo e produziria dessincronia intermitente entre execuções do
-    /// seed (design.md §4.2). Não normaliza o documento: quem chama passa o resultado de
-    /// <see cref="For"/> (ou, em teste, um texto já normalizado por construção).
+    /// SHA-256 de <paramref name="document"/> em UTF-8, hex minúsculo, sobre a CHAVE DE IDENTIDADE
+    /// de <paramref name="document"/> — não sobre o texto literal recebido. A chave de identidade é
+    /// insensível à caixa (<see cref="NormalizeForIdentity"/>): "Vazamento no banheiro" e "vazamento
+    /// no banheiro" produzem o MESMO hash, porque caixa não muda o significado de uma descrição de
+    /// serviço — são o mesmo documento para efeito de identidade/deduplicação (ING-10).
+    ///
+    /// <para>
+    /// <b>MET-527 — por que aqui, e não em <see cref="For"/>:</b> teclado de celular capitaliza a
+    /// primeira letra por padrão; sem essa insensibilidade, a consulta digitada "Vazamento no
+    /// banheiro" gerava um hash diferente do "vazamento no banheiro" que produziu o vetor
+    /// pré-computado, e a busca respondia 422 <c>embedding_unavailable</c> para uma consulta que
+    /// deveria funcionar — o defeito mais provável de aparecer numa demonstração real. A correção
+    /// fica DELIBERADAMENTE só na chave: o texto que <see cref="For"/> devolve — o que de fato vira
+    /// vetor, via <see cref="IEmbeddingProvider.EmbedAsync"/> — preserva a caixa original. Um
+    /// provedor de embeddings vivo é treinado sobre texto natural; minusculizar a entrada antes de
+    /// mandar ao modelo seria perda de informação gratuita. E, decisivo: minusculizar o texto
+    /// embeddado mudaria os 170 vetores já medidos contra o golden set do M1 (150 do corpus + ~20 do
+    /// golden set) sem necessidade nenhuma — a régua deste milestone não se ajusta para um defeito
+    /// que só existe no modo demo.
+    /// </para>
     /// </summary>
     public static string Hash(string document)
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        var bytes = Encoding.UTF8.GetBytes(document);
+        var identity = NormalizeForIdentity(document);
+        var bytes = Encoding.UTF8.GetBytes(identity);
         var hashBytes = SHA256.HashData(bytes);
 
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Normalização usada SÓ para decidir identidade (a chave de <see cref="Hash"/>) — nunca para o
+    /// texto que vira vetor. Hoje é só case-fold cultura-invariante
+    /// (<see cref="string.ToLowerInvariant()"/>, sem as peculiaridades de <c>tr-TR</c> que
+    /// <see cref="string.ToLower()"/> sem cultura explícita teria): estável entre plataformas e
+    /// versões do runtime, mesmo racional de <see cref="Hash"/> escolher SHA-256 sobre
+    /// <see cref="string.GetHashCode()"/>. Método nomeado à parte (em vez de inline em
+    /// <see cref="Hash"/>) para que "o que conta como a MESMA identidade" continue sendo uma decisão
+    /// explícita e isolada, não um detalhe perdido dentro do cálculo de hash.
+    /// </summary>
+    private static string NormalizeForIdentity(string document) => document.ToLowerInvariant();
 }

@@ -31,6 +31,14 @@ public sealed class SeedCorpusTests
     private static readonly string EmbeddingsArtifactPath =
         Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-qwen3-embedding-0.6b.json");
 
+    /// <summary>
+    /// <c>model</c> esperado do artefato do corpus (MET-528) — o mesmo literal documentado em
+    /// <c>db/seed/README.md</c> e usado por <c>src/Prumo.SeedEmbeddings</c>/<c>src/Prumo.Seed</c>.
+    /// Fixado aqui de propósito: trocar de modelo é decisão do dono (ADR), e esta constante precisa
+    /// mudar JUNTO com o artefato — nunca silenciosamente.
+    /// </summary>
+    private const string ExpectedEmbeddingsArtifactModelId = "openai-compatible:text-embedding-qwen3-embedding-0.6b@1024";
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -375,6 +383,67 @@ public sealed class SeedCorpusTests
             $"{string.Join(", ", missing)}. A descrição mudou sem regenerar o artefato? Regenere com " +
             "'dotnet run --project src/Prumo.Seed' usando Embeddings__Provider=openai-compatible " +
             "(ver db/seed/README.md).");
+    }
+
+    /// <summary>
+    /// Complementa o teste acima na direção OPOSTA (MET-528, ADR-006 — "coerência interna do
+    /// artefato": nenhum hash faltando NEM sobrando). Aquele prova que todo profissional real tem
+    /// vetor; este prova que todo vetor do artefato corresponde a um profissional real — sem isto, um
+    /// artefato colado por engano de OUTRA geração/corpus (slugs que não existem mais, por exemplo
+    /// depois de uma renomeação) passaria batido: nenhuma das guardas de "faltando" pegaria uma
+    /// entrada a MAIS. <see cref="PrecomputedEmbeddingStore.Entries"/> é a MESMA lista que a busca
+    /// usa para montar <c>exampleQueries</c> no artefato de consultas — aqui, para o artefato de
+    /// CORPUS, cada entrada só preenche <c>Slug</c> (nunca <c>Id</c>/<c>Text</c>).
+    /// </summary>
+    [Fact]
+    public void NoEmbeddingsArtifactEntry_IsOrphanedFromARealProfessional()
+    {
+        var professionalSlugs = LoadProfessionals().Select(p => p.Slug).ToHashSet(StringComparer.Ordinal);
+        var store = PrecomputedEmbeddingStore.Load([EmbeddingsArtifactPath]);
+
+        var orphaned = store.Entries
+            .Where(entry => entry.Slug is null || !professionalSlugs.Contains(entry.Slug))
+            .Select(entry => entry.Slug ?? "(slug ausente)")
+            .ToList();
+
+        Assert.True(orphaned.Count == 0,
+            $"{orphaned.Count} entrada(s) de '{EmbeddingsArtifactPath}' não correspondem a nenhum " +
+            $"profissional real do corpus (slug órfão — sinal de artefato desatualizado, colado de " +
+            $"outra geração, ou profissional removido/renomeado sem regenerar): {string.Join(", ", orphaned)}.");
+    }
+
+    /// <summary>
+    /// Guarda de contagem (MET-528, ADR-006): sozinha, não pega toda dessincronia (um artefato com N
+    /// entradas erradas mas a MESMA contagem passaria), mas é barata e pega exatamente a classe de
+    /// erro que as duas guardas acima, juntas, também pegam por outro caminho (missing + órfão) — um
+    /// terceiro sinal independente, direto, sem precisar cruzar duas listas para enxergar "os
+    /// números não batem".
+    /// </summary>
+    [Fact]
+    public void EmbeddingsArtifact_VectorCount_MatchesTheRealProfessionalCount()
+    {
+        var professionals = LoadProfessionals();
+        var store = PrecomputedEmbeddingStore.Load([EmbeddingsArtifactPath]);
+
+        Assert.Equal(professionals.Count, store.VectorCount);
+    }
+
+    /// <summary>
+    /// "model"/"dimensions" declarados batendo com o que o projeto espera (MET-528) — não só "algum
+    /// valor não-vazio e internamente consistente", que <see cref="PrecomputedEmbeddingStore.Load"/>
+    /// já garante na carga (ver XML-doc de <see cref="PrecomputedEmbeddingStore.Dimensions"/>): um
+    /// artefato trocado por engano por outro, de modelo ou dimensão diferentes mas internamente
+    /// consistente consigo mesmo, passaria pelas validações de <c>Load</c> sem incidente. Fixar o
+    /// literal esperado aqui é deliberado: trocar de modelo é decisão do dono (ADR, ex.: ADR-004) —
+    /// esta asserção precisa ser atualizada JUNTO com o artefato, nunca continuar batendo por acaso.
+    /// </summary>
+    [Fact]
+    public void EmbeddingsArtifact_DeclaresTheExpectedModelAndDimensions()
+    {
+        var store = PrecomputedEmbeddingStore.Load([EmbeddingsArtifactPath]);
+
+        Assert.Equal(ExpectedEmbeddingsArtifactModelId, store.ModelId);
+        Assert.Equal(EmbeddingDefaults.Dimensions, store.Dimensions);
     }
 
     // ---- infraestrutura de leitura -----------------------------------------------------------

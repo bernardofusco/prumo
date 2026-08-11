@@ -123,6 +123,32 @@ public sealed class SearchQueryEmbedderTests : IDisposable
         Assert.Equal(expectedVector, result.Vector!.ToArray());
     }
 
+    /// <summary>
+    /// MET-527 — o defeito reproduzido em produção: <c>q=vazamento no banheiro</c> respondia 200,
+    /// <c>q=Vazamento no banheiro</c> (a MESMA consulta, só com a primeira letra maiúscula — o que
+    /// o teclado de um celular faz por padrão) respondia 422 <c>embedding_unavailable</c>, porque
+    /// <see cref="EmbeddingDocument.Hash"/> era sensível à caixa. <see cref="EmbeddingDocument.Hash"/>
+    /// agora normaliza a caixa na CHAVE DE IDENTIDADE — este teste prova o lookup pelo store através
+    /// de <see cref="SearchQueryEmbedder"/>, a mesma cadeia D8 que a rota usa.
+    /// </summary>
+    [Theory]
+    [InlineData("Vazamento no banheiro")]
+    [InlineData("VAZAMENTO NO BANHEIRO")]
+    [InlineData("vazamento no Banheiro")]
+    public async Task EmbedAsync_ReturnsPrecomputed_WhenTheQueryDiffersFromTheStoredDocumentOnlyByCase(string queryTextWithDifferentCase)
+    {
+        const string storedText = "vazamento no banheiro";
+        var expectedVector = MakeVector(0.63f);
+
+        var store = LoadStoreWithDocument(storedText, expectedVector);
+        var embedder = CreateEmbedder(store, new NeverCalledEmbeddingProvider(), EmbeddingProviderRegistration.PrecomputedProviderName);
+
+        var result = await embedder.EmbedAsync(queryTextWithDifferentCase, CancellationToken.None);
+
+        Assert.Equal(QueryEmbeddingMode.Precomputed, result.Mode);
+        Assert.Equal(expectedVector, result.Vector!.ToArray());
+    }
+
     // ---- Passo 3 do D8: store ausente, ramifica por Embeddings:Provider -------------------------
 
     [Fact]

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework/Nullable/ImplicitUsings vêm de Directory.Build.props (fonte única). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Comando de regeneração de db/seed/embeddings/<modelo>.json (MET-528 — mesmo achado que já
+      motivou src/Prumo.Eval na T10/MET-479: sem isto, "regenerar o artefato do corpus" só existia em
+      prosa em db/seed/README.md — "rode a ingestão contra um banco descartável e exporte as
+      colunas". MESMO padrão de src/Prumo.Eval: ProjectReference para src/Prumo.Seed, de onde reusa
+      SeedCorpusReader/SeedCorpus/SeedInputException (a MESMA leitura/validação de
+      db/seed/professionals.json que a ingestão usa) e, transitivamente (Prumo.Seed já referencia
+      Prumo.Api), EmbeddingDocument/IEmbeddingProvider/EmbeddingProviderRegistration — nenhum parser
+      nem chamada HTTP reimplementados aqui. Nenhum PackageReference novo.
+
+      Diferença deliberada para src/Prumo.Seed: este comando NUNCA abre conexão com Postgres — só lê
+      o corpus, chama o provedor de embeddings configurado e escreve o artefato JSON diretamente,
+      sem passar por banco nem exigir ConnectionStrings:Prumo. "Regenerar o artefato" e "popular o
+      banco" são operações independentes (o Seed, com Embeddings:Provider=precomputed, já consome o
+      artefato pronto — não precisa gerá-lo).
+    -->
+    <ProjectReference Include="..\Prumo.Seed\Prumo.Seed.csproj" />
+  </ItemGroup>
+
+</Project>

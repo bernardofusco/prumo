@@ -10,6 +10,18 @@
 > Racional completo, número antigo, número novo e o porquê: seção "Piso `L2` baixado de 0,70 para
 > 0,40 (ADR-005, 2026-08-11)", mais abaixo.
 
+> **`meanPrecision@5` atualizado de 0,41 para 0,42 (2026-08-11, MET-528, ADR-006).** 3 dos 150
+> vetores do artefato do corpus (`db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json`) não
+> eram reprodutíveis pelo modelo declarado — regenerados e travados por verificação executável
+> (`db/seed/README.md`, "Reprodutibilidade do artefato"). A régua remedida com o artefato corrigido:
+> `hitRate@3 = 1,00`, `meanPrecision@5 = 0,42` (era 0,41), ordem 2/2, L4 passa — **o piso `L2 = 0,40`
+> NÃO mudou** (`floor(0,42 / 0,05) × 0,05 = 0,40`, a mesma regra da ADR-005 aplicada ao valor novo).
+> Onde o texto abaixo narra COMO a ADR-005 chegou a 0,40 a partir de 0,41 medido NAQUELE momento, esse
+> relato fica intacto — é história real de uma decisão real, não um número desatualizado por descuido.
+> Racional completo, tabela antes/depois e o porquê do número ter subido (não foi "afrouxar a régua"):
+> seção "Vetores do corpus corrigidos (ADR-006, MET-528, 2026-08-11)", mais abaixo, e
+> `project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md` (repo do harness).
+
 Este diretório é o instrumento de medição da MET-479 (`specs/features/met-479-busca-ranking-hibrido/`,
 seção **"Medição do Case"**, normativa). Ele existe para uma frase só: *"vazamento no banheiro"
 encontra encanador sem a palavra "encanador" aparecer em lugar nenhum* — e esse README documenta como
@@ -279,75 +291,89 @@ desta seção (`hitRate@3 = 0,60 < 1,00`), mas fica registrado — a régua não
 mudou. Este número é informativo (prova a propriedade que a asserção do teste exige); o valor
 oficial, ao lado de semântica e híbrido na mesma tabela, é o que a T11 publica.
 
-## Grid de calibração e limiares — MEDIDO (T11 reexecutada, MET-524); régua fecha com `L2` revisado (ADR-005)
+## Grid de calibração e limiares — MEDIDO (T11 reexecutada, MET-524; artefato do corpus corrigido, MET-528/ADR-006); régua fecha com `L2` revisado (ADR-005)
 
-**Medição real** (2026-08-11), `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`, contra
-Postgres + pgvector real (Testcontainers), corpus semeado com os vetores REAIS de
-`db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json` (não `hashing`), consultas vetorizadas
-pelo MESMO `SearchQueryEmbedder`/`PrecomputedEmbeddingStore` que a API usa, candidatos recuperados
-por `ProfessionalSearchQuery` (a mesma consulta SQL da API) e re-ranqueados pelos 18 pontos com
+**Medição real** (reexecutada em 2026-08-11 para esta revisão, MET-528),
+`tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`, contra Postgres + pgvector real
+(Testcontainers), corpus semeado com os vetores REAIS de
+`db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json` (não `hashing` — artefato corrigido
+pela MET-528, ver "Vetores do corpus corrigidos" abaixo), consultas vetorizadas pelo MESMO
+`SearchQueryEmbedder`/`PrecomputedEmbeddingStore` que a API usa, candidatos recuperados por
+`ProfessionalSearchQuery` (a mesma consulta SQL da API) e re-ranqueados pelos 18 pontos com
 `HybridRanker.Rank` — a mesma camada de busca, ponta a ponta, exceto o transporte HTTP. As métricas
 são calculadas sobre a lista TRUNCADA em `Search:DefaultResultLimit` (10) — a mesma lista que a API
 devolveria a um cliente que não informa `limit`.
 
-Esta é a **segunda** execução real da T11. A primeira (2026-08-10, `bge-m3`, branch `met-479-t11`,
-não mesclada) reprovou com `hitRate@3 = 0,75` (falhas: `gs-05`, `gs-07`, `gs-09`, `gs-14`, `gs-18`) e
-`meanPrecision@5` entre 0,39 e 0,42. Seguindo a ordem de diagnóstico pré-comprometida abaixo (modelo
-primeiro), o dono decidiu trocar de modelo (`qwen3-embedding-0.6b`) e revisar `gs-07` por um defeito
-de construção — `project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md` (repo do
-harness). Esta seção registra a medição **depois** dessa mudança — uma única vez, sem segunda
-rodada de ajuste (disciplina da própria MET-524).
+Esta é a **terceira** execução real deste eval contra vetores reais. A primeira (2026-08-10, `bge-m3`,
+branch `met-479-t11`, não mesclada) reprovou com `hitRate@3 = 0,75` (falhas: `gs-05`, `gs-07`,
+`gs-09`, `gs-14`, `gs-18`) e `meanPrecision@5` entre 0,39 e 0,42. Seguindo a ordem de diagnóstico
+pré-comprometida abaixo (modelo primeiro), o dono decidiu trocar de modelo (`qwen3-embedding-0.6b`) e
+revisar `gs-07` por um defeito de construção — `project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs-07.md`
+(repo do harness). A segunda (MET-524, também 2026-08-11) mediu o resultado dessa troca — uma única
+vez, sem segunda rodada de ajuste (disciplina da própria MET-524) — e é a medição que a tabela abaixo
+mostrava até esta revisão: `hitRate@3 = 1,00` no ponto configurado, `meanPrecision@5 = 0,41` no único
+ponto elegível. A **terceira** (esta revisão, MET-528) reexecuta a MESMA suíte, sem tocar peso, `τ`,
+corte, golden set nem código de ranking — só o artefato do corpus mudou (3 dos 150 vetores,
+irreprodutíveis pelo modelo declarado, corrigidos — ver "Vetores do corpus corrigidos" abaixo).
 
-⛔→✅ **Resultado da medição (inalterado desde a primeira leitura desta T11): `hitRate@3 = 1,00` no
-ponto configurado (L1 e L4 fecham) e L3 é alcançável em um único ponto do grid, mas NENHUM ponto do
-grid satisfaz `meanPrecision@5 ≥ 0,70` (o piso ORIGINAL da spec)** — o melhor `meanPrecision@5` entre
-os pontos elegíveis (que satisfazem L1 e L3 juntos) é **0,41**, bem abaixo de 0,70. Diante disso a T11
+⛔→✅ **Resultado da medição: `hitRate@3 = 1,00` no ponto configurado (L1 e L4 fecham) e L3 é
+alcançável em um único ponto do grid, mas NENHUM ponto do grid satisfaz `meanPrecision@5 ≥ 0,70` (o
+piso ORIGINAL da spec)** — o melhor `meanPrecision@5` entre os pontos elegíveis (que satisfazem L1 e
+L3 juntos) é **0,42** (era 0,41 antes da correção de vetores da MET-528 — mesmo ponto, mesma ordem,
+mesmo `hitRate@3`; só `meanPrecision@5` mudou), bem abaixo de 0,70. Diante disso a T11 original
 **parou e reportou** — exatamente o que `spec.md:163-165` manda quando o melhor ponto do grid fica
 abaixo do piso: "o dono decide... ou ratifica um limiar menor via ADR. Nenhum agente escolhe". Nenhum
 peso foi escolhido por este agente, nenhum piso foi alterado por este agente, nada em
-`golden-set.json` foi tocado.
+`golden-set.json` foi tocado — nem pela T11 original, nem por esta revisão (MET-528).
 
 **O dono decidiu** (2026-08-11, fora desta task, registrado em
 `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` no repo do harness): ratificar
 um piso menor, derivado da MESMA regra aritmética que a spec já usa para o caso simétrico de subir o
 piso (`spec.md:161`, arredondar para baixo em passos de 0,05), aplicada ao valor medido no único ponto
 elegível. Ver "Piso `L2` baixado de 0,70 para 0,40", logo após a tabela, para o número antigo, o novo
-e o porquê. A tabela abaixo é a saída real e completa do teste (nenhum ponto foi omitido) — os NÚMEROS
-medidos não mudam; o que muda é o piso contra o qual eles são julgados:
+e o porquê — e "Vetores do corpus corrigidos (ADR-006, MET-528)", logo depois, para por que o piso
+continua o mesmo mesmo com o número subindo de 0,41 para 0,42. A tabela abaixo é a saída real e
+completa do teste (nenhum ponto foi omitido), medida com o artefato do corpus CORRIGIDO (MET-528):
 
 | `semanticWeight` | `distanceDecayKm` | `hitRate@3` | `meanPrecision@5` | ordem 100%? | L1&L3? |
 |---|---|---|---|---|---|
-| 1,0 | 5  | 1,00 | 0,41 | não (1/2) | não |
-| 1,0 | 10 | 1,00 | 0,41 | não (1/2) | não |
-| 1,0 | 20 | 1,00 | 0,41 | não (1/2) | não |
-| **0,9** | **5** *(adotado — appsettings.json)* | **1,00** | **0,41** | **sim (2/2)** | **sim** |
-| 0,9 | 10 | 0,95 | 0,41 | sim (2/2) | não |
-| 0,9 | 20 | 0,95 | 0,41 | sim (2/2) | não |
-| 0,8 | 5  | 1,00 | 0,40 | não (1/2) | não |
-| 0,8 | 10 | 1,00 | 0,40 | não (1/2) | não |
-| 0,8 | 20 | 0,95 | 0,41 | sim (2/2) | não |
-| 0,7 | 5  | 0,95 | 0,40 | não (1/2) | não |
-| 0,7 | 10 | 1,00 | 0,40 | não (0/2) | não |
-| 0,7 | 20 | 1,00 | 0,40 | não (1/2) | não |
-| 0,6 | 5  | 0,95 | 0,40 | não (0/2) | não |
-| 0,6 | 10 | 0,95 | 0,40 | não (0/2) | não |
-| 0,6 | 20 | 1,00 | 0,40 | não (0/2) | não |
-| 0,5 | 5  | 0,85 | 0,39 | não (0/2) | não |
-| 0,5 | 10 | 0,95 | 0,40 | não (0/2) | não |
-| 0,5 | 20 | 0,95 | 0,40 | não (0/2) | não |
+| 1,0 | 5  | 1,00 | 0,42 | não (1/2) | não |
+| 1,0 | 10 | 1,00 | 0,42 | não (1/2) | não |
+| 1,0 | 20 | 1,00 | 0,42 | não (1/2) | não |
+| **0,9** | **5** *(adotado — appsettings.json)* | **1,00** | **0,42** | **sim (2/2)** | **sim** |
+| 0,9 | 10 | 0,95 | 0,42 | sim (2/2) | não |
+| 0,9 | 20 | 0,95 | 0,42 | sim (2/2) | não |
+| 0,8 | 5  | 1,00 | 0,41 | não (1/2) | não |
+| 0,8 | 10 | 1,00 | 0,41 | não (1/2) | não |
+| 0,8 | 20 | 0,95 | 0,42 | sim (2/2) | não |
+| 0,7 | 5  | 0,95 | 0,41 | não (1/2) | não |
+| 0,7 | 10 | 1,00 | 0,41 | não (0/2) | não |
+| 0,7 | 20 | 1,00 | 0,41 | não (1/2) | não |
+| 0,6 | 5  | 0,95 | 0,41 | não (0/2) | não |
+| 0,6 | 10 | 0,95 | 0,41 | não (0/2) | não |
+| 0,6 | 20 | 1,00 | 0,41 | não (0/2) | não |
+| 0,5 | 5  | 0,85 | 0,40 | não (0/2) | não |
+| 0,5 | 10 | 0,95 | 0,41 | não (0/2) | não |
+| 0,5 | 20 | 0,95 | 0,41 | não (0/2) | não |
+
+Todo `meanPrecision@5` da tabela subiu exatamente 0,01 em relação à medição anterior (0,41→0,42 no
+ponto adotado, 0,40→0,41 nos demais, 0,39→0,40 no pior ponto) — nenhum `hitRate@3` nem nenhuma coluna
+de ordem mudou. É a assinatura esperada de corrigir 3 vetores em 150 (2% do corpus): um efeito
+pequeno, uniforme e não seletivo — não um ponto específico "melhorando mais" que os outros, o que
+seria suspeito de coincidência com a escolha do ponto adotado.
 
 Só **um** dos 18 pontos (`w_s=0,9 / τ=5`) satisfaz L1 e L3 simultaneamente — o subconjunto elegível
 da regra de escolha da spec não está mais vazio como na medição contra `bge-m3`, mas o único elegível
-mede `meanPrecision@5 = 0,41`, abaixo do piso ORIGINAL de 0,70 da spec. A regra de calibração do L2
+mede `meanPrecision@5 = 0,42`, abaixo do piso ORIGINAL de 0,70 da spec. A regra de calibração do L2
 para SUBIR o piso ("o piso medido pode subir, nunca descer") não se aplica aqui: o número medido no
 único ponto elegível está abaixo do piso fixado pela spec, não acima dele — é o outro ramo que a
 própria spec já previa (`spec.md:163-165`) e que motivou a decisão do dono documentada logo abaixo.
 
-Para referência (baseline lexical, determinístico, sem vetor nenhum, recalculado contra o golden set
-desta revisão — ver "Baseline lexical" acima): `hitRate@3 = 0,60` (baseline lexical) < `0,85`–`1,00`
-(grid semântico/híbrido medido agora) — a folga entre busca semântica e correspondência literal de
-palavra ficou ainda maior
-com o modelo novo do que estava com `bge-m3` (`0,75`–`0,80`).
+Para referência (baseline lexical, determinístico, sem vetor nenhum — não depende de embedding, logo
+inalterado pela correção de vetores da MET-528 — recalculado contra o golden set desta revisão — ver
+"Baseline lexical" acima): `hitRate@3 = 0,60` (baseline lexical) < `0,85`–`1,00` (grid
+semântico/híbrido medido agora) — a folga entre busca semântica e correspondência literal de palavra
+ficou ainda maior com o modelo novo do que estava com `bge-m3` (`0,75`–`0,80`).
 
 **Só-semântica vs. híbrido:** `semanticWeight = 1,0` (só-semântica) alcança `hitRate@3 = 1,00` nos 3
 pontos de `τ`, mas falha L3 (1/2) nos três — sem proximidade no score, os dois pares de
@@ -356,6 +382,13 @@ elegível (`0,9/5`) já é híbrido, com peso de proximidade pequeno (0,1) — �
 a ordem sem alterar `hitRate@3`.
 
 ### Piso `L2` baixado de 0,70 para 0,40 (ADR-005, 2026-08-11)
+
+> Esta seção narra a decisão exatamente como ela foi tomada, no momento em que foi tomada — o valor
+> medido então era `meanPrecision@5 = 0,41`, e é esse número que aparece abaixo, intacto, porque foi
+> com ele que a ADR-005 derivou o piso. **O valor medido HOJE é 0,42** (3 vetores do corpus corrigidos
+> pela MET-528/ADR-006, depois desta decisão — ver "Vetores do corpus corrigidos", logo abaixo) — a
+> nota ao final da derivação da fórmula, e ao final da seção "O tamanho real da folga", apontam
+> explicitamente para o número atual. O piso `L2 = 0,40` **não mudou**.
 
 **Pesos escolhidos: `semanticWeight = 0,9`, `proximityWeight = 0,1`, `distanceDecayKm (τ) = 5`.** A
 regra de escolha da spec (`spec.md:177-182`: "descartar pontos que violem L1 ou L3 → maior
@@ -376,6 +409,19 @@ NOVO derivado pela MESMA regra aritmética que a spec usa para o caso simétrico
 ```
 L2 = floor(0,41 / 0,05) × 0,05 = 0,40
 ```
+
+**Nota (2026-08-11, MET-528, ADR-006) — o piso não se move com o número novo.** Depois desta decisão,
+3 dos 150 vetores do corpus se revelaram irreprodutíveis e foram corrigidos (ver "Vetores do corpus
+corrigidos", abaixo); o valor medido no mesmo ponto elegível passou de 0,41 para **0,42**. Aplicando a
+MESMA regra de arredondamento ao valor novo:
+
+```
+L2 = floor(0,42 / 0,05) × 0,05 = 0,40
+```
+
+— o piso ratificado pela ADR-005 é insensível a esta mudança. Não houve recalibração, não houve nova
+ADR sobre o piso: `L2 = 0,40` continua sendo o piso vigente, agora com folga um pouco maior (ver "O
+tamanho real da folga" abaixo).
 
 **Por que isso não é "afrouxar a régua até passar".** O número não foi escolhido para caber — ele sai
 mecanicamente da mesma fórmula que a spec já declarava, aplicada ao único ponto elegível, medido antes
@@ -399,10 +445,16 @@ teste — não para certificar que a busca está "boa o bastante" em sentido abs
 (`k ∈ {0..5}`) — o denominador é sempre 5 porque `n ≥ 5` nas 20 consultas do golden set (mesmo as 5
 com localização têm de 8 a 18 candidatos dentro do raio, ver "Teto estrutural" acima) — logo cada
 `precision@5` é múltiplo de 0,2, e `meanPrecision@5` (a média de 20 desses valores) só assume
-múltiplos de `0,2 / 20 = 0,01`. A folga `0,41 − 0,40 = 0,01` é **exatamente uma unidade dessa
+múltiplos de `0,2 / 20 = 0,01`. A folga `0,41 − 0,40 = 0,01` era **exatamente uma unidade dessa
 granularidade — a menor folga não-nula que a métrica consegue expressar**: uma única consulta
-perdendo um relevante do top-5 ainda passa; duas perdas dessa magnitude (na mesma consulta ou em
-consultas diferentes) reprovam.
+perdendo um relevante do top-5 ainda passava; duas perdas dessa magnitude (na mesma consulta ou em
+consultas diferentes) reprovariam. (Descrição do estado em 2026-08-11, no momento da ADR-005.)
+
+**Atualização (2026-08-11, MET-528, ADR-006).** Com o artefato do corpus corrigido, a folga medida
+hoje é `0,42 − 0,40 = 0,02` — **duas** unidades dessa mesma granularidade, não uma: a correção dos 3
+vetores não só subiu o número publicado, também dobrou a margem entre o medido e o piso. Continua uma
+margem pequena (duas consultas perdendo um relevante do top-5, ou uma perdendo dois, ainda reprovam),
+mas menos rente ao limite do que estava antes da correção.
 
 **O que não foi feito, e por quê.** O dono decidiu, explicitamente, não mexer no corpus
 (`db/seed/professionals.json`) nem nas 20 consultas (`eval/golden-set.json`) — a alavanca que a
@@ -429,6 +481,80 @@ que passa" — ele é uma função determinística (arredondamento) do valor med
 pela regra independente dos pesos. Vinte consultas continuam medindo uma direção, não uma garantia; a
 mudança de piso é sobre reconhecer o teto real dessa direção, não sobre fingir uma garantia maior.
 
+### Vetores do corpus corrigidos e artefato regenerado (ADR-006, MET-528, 2026-08-11)
+
+**A disciplina primeiro: este número SOBE (0,41 → 0,42), o movimento que este projeto trata como
+suspeito por padrão.** Registrado aqui com a mesma severidade que se aplicou para BAIXAR o piso
+(seção acima): a mudança não foi escolhida para melhorar o número — foi consequência mecânica de
+corrigir um defeito de reprodutibilidade encontrado ao verificar outra issue (MET-527); o efeito na
+régua foi medido com o eval oficial ANTES de qualquer decisão, e teria sido adotado mesmo se o número
+tivesse piorado; e o piso ratificado pela ADR-005 não se move (seção acima).
+
+**O achado.** Reembeddar as 150 descrições do corpus contra o mesmo `text-embedding-qwen3-embedding-0.6b`,
+no mesmo LM Studio, e comparar vetor a vetor com o artefato então versionado devolveu 147 vetores
+bit-idênticos e **3 diferentes** — não ruído de ponto flutuante, outro vetor:
+
+| slug | especialidade | cosseno vs. artefato antigo |
+|---|---|---:|
+| `marcos-araujo-nit-008` | encanador | 0,8105 |
+| `pedro-machado-bh-055` | chaveiro | 0,8754 |
+| `vinicius-ferreira-rp-036` | diarista | 0,9026 |
+
+**Cinco hipóteses eliminadas por medição, não por suposição** (`project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md`,
+repo do harness, tem a medição completa de cada uma): atribuição trocada entre profissionais (o vetor
+antigo de cada um dos 3 continua mais parecido com o PRÓPRIO documento do que com qualquer um dos
+outros 149); truncamento de texto (o texto completo é o que mais se aproxima, não nenhum prefixo);
+texto histórico diferente (`db/seed/professionals.json` tem uma única revisão no histórico do git);
+documento contaminado (violaria D2 — nome/especialidade colados à descrição; oito composições
+alternativas testadas, nenhuma se aproxima tanto quanto a descrição normalizada correta); e
+sensibilidade a tamanho de lote (reembedação com lotes de 1, 32 e 150 devolveu os MESMOS 3 slugs com
+os MESMOS vetores). A explicação restante mais plausível é uma falha transitória do provedor no
+momento da geração original do artefato.
+
+**A decisão do dono:** regenerar o artefato inteiro (os 150 `sourceHash` não mudaram — o texto do
+corpus não mudou; só os 3 vetores mudaram — verificado explicitamente, não presumido) e travar a
+reprodutibilidade por verificação executável, em vez de só regenerar e seguir. Duas camadas — uma que
+roda sempre (coerência interna do artefato, sem provedor) e uma que roda só com provedor configurado
+(reprodutibilidade contra o modelo real, skip explícito caso contrário) — documentadas em
+`db/seed/README.md`, "Reprodutibilidade do artefato — verificação executável". Detalhe: o furo real
+não eram os 3 vetores em si, era o pipeline não ter como perceber — o artefato antigo era
+internamente consistente consigo mesmo (hash presente, contagem certa, `model`/`dimensions` corretos),
+só não era reproduzível.
+
+**O efeito na régua, medido antes de decidir** (mesma disciplina da T11 original — grid inteiro, sem
+segunda rodada de ajuste): a tabela no topo desta seção já é essa medição. Resumo:
+
+| | artefato anterior | artefato regenerado (MET-528) |
+|---|---:|---:|
+| `hitRate@3` (L1, piso 1,00) | 1,0000 | **1,0000** |
+| `meanPrecision@5` (L2, piso 0,40) | 0,4100 | **0,4200** |
+| ordem (L3) | 2/2 | **2/2** |
+| L4 (consulta do DoD) | passa | **passa** — top-3 idêntico |
+
+Nenhuma consulta passou a falhar L1 (inclusive `gs-02`, cujo alvo de `notes` é justamente
+`marcos-araujo-nit-008` — o vetor de maior divergência); o ponto do grid escolhido pela regra de
+escolha não muda (`w_s=0,9/τ=5` continua o único elegível a L1 e L3 nos dois artefatos — a calibração
+da ADR-003 não é revisitada); e, como já mostrado acima, o piso da ADR-005 não se move. O único número
+que muda é `meanPrecision@5`, subindo 0,01 em cada um dos 18 pontos do grid — o efeito de corrigir 2%
+do corpus (3 de 150 vetores), medido, não estimado.
+
+**Regenerar o artefato:** comando real, `dotnet run --project src/Prumo.SeedEmbeddings` (ver
+`db/seed/README.md`, "Como regenerar") — o mesmo padrão de `src/Prumo.Eval` (que já resolvia este
+problema para o artefato de CONSULTAS do golden set), agora também para o artefato do CORPUS. Antes da
+MET-528, "regenerar o artefato do corpus" só existia em prosa; agora é um comando, com verificação de
+reprodutibilidade (byte a byte, duas execuções) documentada ao lado dele.
+
+### Chaves do artefato do corpus regeneradas — número da régua NÃO muda (MET-527, 2026-08-11)
+
+`EmbeddingDocument.Hash` passou a normalizar a caixa na chave de identidade (racional completo em
+`db/seed/README.md`, "Procedência do artefato de vetores" — "Revisão MET-527"): os 150 `sourceHash`
+do artefato do corpus mudaram, os 150 `embedding` **não** (150/150 idênticos, comparados
+numericamente contra o artefato anterior). O texto embeddado das ~20 consultas do golden set já era
+todo minúsculo — nenhum `sourceHash` daquele artefato mudou, e o arquivo regenerado saiu byte a byte
+idêntico ao anterior. Régua remedida depois da troca de chaves (mesmo comando, mesmo corpus, mesmo
+banco): `hitRate@3 = 1,00`, `meanPrecision@5 = 0,42`, ordem 2/2, L4 passa — **idêntico** ao ponto
+medido pela MET-528, porque nenhum vetor mudou.
+
 ### Hipóteses (ordem de diagnóstico pré-comprometida, aplicada à medição real)
 
 A troca de modelo (ADR-004) resolveu o que a medição contra `bge-m3` apontava como suspeito
@@ -437,7 +563,9 @@ inclusive as 5 que falhavam antes (`gs-05`, `gs-07` revisada, `gs-09`, `gs-14`, 
 ao menos um profissional relevante no top-3. **Isto confirma a hipótese 1 da medição anterior**: o
 modelo era, de fato, a causa da falha de L1.
 
-Mas `meanPrecision@5` não se moveu na mesma proporção: **0,39–0,41 com `qwen3-embedding-0.6b`**,
+Mas `meanPrecision@5` não se moveu na mesma proporção: **0,39–0,41 com `qwen3-embedding-0.6b`**
+*(números da medição de 2026-08-11, antes da ADR-006; com o artefato corrigido o intervalo é
+0,40–0,42 — a faixa de 0,02 entre os 18 pontos, que é o argumento aqui, não muda)*,
 praticamente o MESMO intervalo medido com `bge-m3` (0,39–0,42), apesar de `hitRate@3` ter subido ~25
 pontos percentuais. Inspeção direta (consulta SQL `<=>` contra o banco real, fora do teste, para não
 alterar a régua) em cinco consultas sem localização confirma o padrão: o profissional relevante
@@ -511,7 +639,8 @@ especialidade esperada, independentemente de qual dos dois modelos gerou os veto
    fórmula do ranking.
 3. **A fórmula — descartada de novo, com evidência mais forte que na medição anterior.** O ponto mais
    favorável do grid para `meanPrecision@5` (0,41, no único ponto elegível) mal se move em relação ao
-   pior (0,39) — uma faixa de 0,02 entre os 18 pontos, contra um piso que exige subir 0,29. Nenhuma
+   pior (0,39) — uma faixa de 0,02 entre os 18 pontos, contra um piso que exige subir 0,29. *(Valores
+   de 2026-08-11, antes da ADR-006; hoje são 0,42 e 0,40, e a faixa de 0,02 é a mesma.)* Nenhuma
    combinação de peso e `τ` resolve um problema que está na composição do corpus, não na combinação
    dos dois fatores.
 
@@ -627,7 +756,7 @@ acima). Trocar de modelo/quantização é o mesmo comando com `Embeddings__Model
 `Eval__OutputPath=eval/embeddings/<modelo-novo>.json` — nome de arquivo novo, mesma convenção do
 corpus (`PrecomputedEmbeddingStore.Load` detecta `model` divergente entre arquivos e derruba o boot).
 
-## Estado atual: régua fechada (ADR-005, 2026-08-11)
+## Estado atual: régua fechada (ADR-005, 2026-08-11; vetores do corpus corrigidos na MET-528/ADR-006)
 
 **T10 regenerada com o modelo novo** (2026-08-11, MET-524): `db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json`
 (corpus, T9) e `eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (consultas do golden set,
@@ -637,15 +766,25 @@ está preservada apenas na branch `met-479-t11`, não mesclada) — `tests/Prumo
 mede as 20 consultas contra Postgres + pgvector real, com vetores REAIS, pela mesma camada de busca
 da API. Essa segunda medição fechou L1 e L4 (`hitRate@3 = 1,00`), tornou L3 alcançável em um ponto do
 grid, mas não fechou L2 contra o piso ORIGINAL da spec (`meanPrecision@5 ≥ 0,70` — o melhor ponto
-elegível mede 0,41). A tabela completa medida, a comparação só-semântica vs. híbrido, as hipóteses
-(ordem de diagnóstico pré-comprometida) e a evidência de teto estrutural do corpus estão na seção
-"Grid de calibração e limiares" acima.
+elegível mediu 0,41 nessa medição). A tabela completa medida, a comparação só-semântica vs. híbrido,
+as hipóteses (ordem de diagnóstico pré-comprometida) e a evidência de teto estrutural do corpus estão
+na seção "Grid de calibração e limiares" acima.
 
 **Fora desta medição, o dono decidiu** (`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`,
 repo do harness, 2026-08-11): ratificar `L2 = 0,40` — derivado mecanicamente do valor medido no único
 ponto elegível pela mesma regra de arredondamento que a spec já declarava — e adotar os pesos que a
 regra de escolha já apontava (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`). `appsettings.json:Ranking` foi
 atualizado com esses valores; `GoldenSetEvalTests.L2Threshold` foi atualizado para 0,40, com comentário
-citando a ADR-005. **A régua do M1 fecha**: L1, L2 (revisado), L3 e L4 satisfeitos no ponto configurado.
-Corpus, golden set, artefatos, L1, L3 e o grid de 18 pontos permanecem exatamente como estavam — nada
-disso foi tocado por esta decisão.
+citando a ADR-005. Corpus, golden set, artefatos, L1, L3 e o grid de 18 pontos permaneceram exatamente
+como estavam — nada disso foi tocado por essa decisão. *(Os artefatos só viriam a mudar depois, pela
+ADR-006, e por outro motivo: 3 vetores irreproduzíveis.)*
+
+**Vetores do corpus corrigidos (2026-08-11, MET-528, `project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md`
+no repo do harness).** 3 dos 150 vetores do artefato do corpus se revelaram irreprodutíveis pelo
+modelo declarado (achado ao verificar outra issue, MET-527) — cinco hipóteses eliminadas por medição,
+regenerados por inteiro (150 `sourceHash` inalterados, verificado), e a reprodutibilidade travada por
+duas camadas de verificação executável (`db/seed/README.md`, "Reprodutibilidade do artefato"). A régua
+remedida com o eval oficial: `hitRate@3 = 1,00`, `meanPrecision@5 = 0,42` (era 0,41), ordem 2/2, L4
+passa — ponto adotado e piso `L2 = 0,40` inalterados (ver "Vetores do corpus corrigidos" acima para o
+racional completo e a tabela antes/depois). **A régua do M1 fecha**: L1, L2 (revisado), L3 e L4
+satisfeitos no ponto configurado, com o artefato do corpus atual.
