@@ -38,6 +38,14 @@
     <Content Include="..\..\db\seed\embeddings\*.json"
              Link="db\seed\embeddings\%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Vetores pré-computados das consultas do golden set (eval/embeddings/, MET-479/T10) — MESMO
+      tratamento do artefato do corpus acima e pela mesma razão (comentário no item anterior):
+      Embeddings:PrecomputedPaths resolve os dois artefatos contra AppContext.BaseDirectory.
+    -->
+    <Content Include="..\..\eval\embeddings\*.json"
+             Link="eval\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

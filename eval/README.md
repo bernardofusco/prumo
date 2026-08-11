@@ -290,10 +290,84 @@ ambígua** no corpus real, e o ajuste vai registrado no relatório da task que o
 remove nem se reescreve só porque falhou — isso é ajustar a régua para o código passar, e é
 exatamente o que este projeto se recusa a fazer (`PROJECT-MISSION.md` § Fronteiras invioláveis #3).
 
+## `eval/embeddings/text-embedding-bge-m3.json` (T10 — vetores das consultas do golden set)
+
+Gerado uma única vez (gate humano concluído em 2026-08-10), com o **mesmo modelo** do artefato do
+corpus (`db/seed/embeddings/text-embedding-bge-m3.json`, procedência completa documentada em
+`db/seed/README.md` — modelo, quantização, ausência de prefixo de instrução, tudo vale igual aqui e
+não é repetido nesta seção).
+
+- **Formato:** o mesmo do corpus (`model`, `dimensions`, `hashAlgorithm`, `vectors[]`), com dois
+  campos adicionais por entrada — `id` (o `id` da consulta em `golden-set.json`) e `text` (o texto
+  da consulta; **não é segredo**, já está versionado em `golden-set.json` — é ele que alimenta
+  `exampleQueries` de `GET /api/search/options`, D8 da spec MET-479).
+- **`model` idêntico ao artefato do corpus** — `openai-compatible:text-embedding-bge-m3@1024`.
+  `PrecomputedEmbeddingStore.Load` falha no boot se os dois artefatos declararem `model` diferentes
+  (BSC-20). **Testado, não é conferência visual**:
+  `tests/Prumo.Api.Tests/Eval/GoldenSetEmbeddingsArtifactTests.cs` carrega os DOIS artefatos REAIS
+  deste repo (não fixtures) pelo mesmo `PrecomputedEmbeddingStore.Load` que a busca usa e afirma a
+  igualdade dos dois `ModelId` por igualdade explícita (`CorpusAndQueryEmbeddingArtifacts_DeclareTheIdenticalModel`),
+  além de carregá-los JUNTOS, no mesmo caminho de boot de `Embeddings:PrecomputedPaths`
+  (`CorpusAndQueryEmbeddingArtifacts_LoadTogether_WithoutThrowingAndWithoutDroppingEntries`). O mesmo
+  arquivo também afirma que **toda** consulta real de `golden-set.json` tem `sourceHash` presente no
+  artefato real (`EveryGoldenSetQueryTextHash_ExistsInTheQueryEmbeddingsArtifact`) — a guarda irmã de
+  `SeedCorpusTests.EveryProfessionalServiceDescriptionHash_ExistsInThePrecomputedEmbeddingsArtifact`
+  (T9): sem ela, editar o `text` de uma consulta sem regenerar o artefato deixaria a régua e o
+  artefato divergirem em silêncio (a consulta editada cairia em 422, enquanto `exampleQueries`
+  continuaria servindo o texto ANTIGO que sobrevive no artefato).
+- **`sourceHash` calculado pela MESMA função** da ingestão e da busca em runtime —
+  `EmbeddingDocument.Hash(EmbeddingDocument.For(text))`, reusada sem cópia — é o que permite ao
+  `SearchQueryEmbedder` (MET-479/T5) achar o vetor certo ao receber a consulta digitada pelo usuário
+  (design.md, MET-479, §5.2, passo 1). **Sem assimetria de normalização entre ingestão e busca**: o
+  endpoint só faz `Trim()` antes de repassar a consulta a `EmbedAsync` (idempotente com o que
+  `EmbeddingDocument.For` já faz por conta própria — trim + colapso de espaços + NFC), então
+  digitar/clicar o texto exatamente como está em `golden-set.json` sempre produz, dos dois lados, o
+  mesmo hash.
+- **Ordem do arquivo = ordem de `golden-set.json`** (`gs-01` a `gs-20`) — é a ordem que
+  `PrecomputedEmbeddingStore.Entries` preserva e que `GET /api/search/options` usa para montar
+  `exampleQueries` (até `Search:ExampleQueryLimit`, default 8): as 8 primeiras consultas de
+  demonstração da tela são `gs-01`…`gs-08`, começando pela frase do case.
+- **Determinístico, sem timestamp, EOL LF** — duas gerações contra o mesmo endpoint (LM Studio
+  local, `bge-m3`/`Q8_0`), comparadas componente a componente: **0 de 20.480 valores divergentes**
+  (20 vetores × 1024 dimensões, float32).
+- **Verificado de fato** (não presumido): com `Embeddings__Provider=precomputed` e
+  `Embeddings__PrecomputedPaths` apontando para os dois artefatos (corpus + consultas — ver
+  `.env.example`), `GET /api/search?q=vazamento+no+banheiro` responde **200**, `mode: "precomputed"`,
+  sem nenhuma chave configurada e sem o LM Studio no ar — a demonstração pública da tela.
+
+### Como regenerar
+
+Comando real e versionado (achado do Reviewer da T10: a primeira passada só descrevia isso em
+prosa) — `src/Prumo.Eval` (`dotnet run --project src/Prumo.Eval`), o mesmo padrão de
+`src/Prumo.Seed` (`Host.CreateApplicationBuilder`, `EmbeddingProviderRegistration.AddEmbeddingProvider`,
+nenhum `PackageReference` novo), reusando `EmbeddingDocument.For`/`.Hash` e o `IEmbeddingProvider`
+configurado — nunca uma reimplementação paralela de normalização, hash ou chamada HTTP:
+
+```bash
+# A partir da raiz do repo. Suba o LM Studio servindo text-embedding-bge-m3 (quantização Q8_0) em
+# http://localhost:1234/v1 primeiro (mesmo servidor que gerou o artefato do corpus).
+export Embeddings__Provider=openai-compatible
+export Embeddings__BaseUrl=http://localhost:1234/v1
+export Embeddings__Model=text-embedding-bge-m3
+dotnet run --project src/Prumo.Eval
+```
+
+Lê `eval/golden-set.json` (`Eval:GoldenSetPath`, default), calcula `EmbeddingDocument.For`/`.Hash`
+para cada `text`, chama o `IEmbeddingProvider` configurado e escreve
+`eval/embeddings/text-embedding-bge-m3.json` (`Eval:OutputPath`, default) no formato acima, na
+ordem de `golden-set.json`, sem timestamp, EOL LF, sem BOM. **Verificado**: a saída deste comando
+reproduz o artefato versionado deste repo byte a byte (mesma checagem de determinismo bit-a-bit da
+T9 — ver acima). Trocar de modelo/quantização é o mesmo comando com `Embeddings__Model` diferente e
+`export Eval__OutputPath=eval/embeddings/<modelo-novo>.json` — nome de arquivo novo, mesma convenção
+do corpus (`PrecomputedEmbeddingStore.Load` detecta `model` divergente entre arquivos e derruba o
+boot).
+
 ## Pendência conhecida
 
-**T10/T11 dependem de decisão humana ainda em aberto** (MET-478/P1 — provedor de embeddings real).
-Sem `db/seed/embeddings/<modelo>.json` e `eval/embeddings/<modelo>.json`, não existe vetor semântico
-real neste repo, e o eval do golden set contra Postgres não pode rodar de verdade. Enquanto isso, o
-que este diretório garante é a **conformidade estrutural** da régua (T3) — a régua está pronta para
-medir assim que os vetores existirem.
+**T10 concluída** (2026-08-10): `db/seed/embeddings/text-embedding-bge-m3.json` (corpus, T9) e
+`eval/embeddings/text-embedding-bge-m3.json` (consultas do golden set, T10) existem, ambos com
+`model: "openai-compatible:text-embedding-bge-m3@1024"`. **T11 (o eval, o grid de 18 pontos e a
+calibração dos pesos) ainda não rodou** — a tabela da seção "Grid de calibração e limiares" acima,
+os limiares L1–L4 medidos de verdade e a comparação só-semântica vs. híbrido continuam pendentes
+dessa task, não desta. Enquanto T11 não roda, o que este diretório garante é a **conformidade
+estrutural** da régua (T3) — a régua está pronta para medir.
