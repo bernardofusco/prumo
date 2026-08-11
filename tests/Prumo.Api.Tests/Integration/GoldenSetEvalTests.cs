@@ -61,16 +61,24 @@ namespace Prumo.Api.Tests.Integration;
 public sealed class GoldenSetEvalTests(PostgresIntegrationFixture fixture, ITestOutputHelper output)
 {
     /// <summary>
-    /// L2 (spec.md "Medição do Case → Limiares"): piso FIXADO PELA SPEC (0,70) — só pode SUBIR se a
-    /// T11 medir ao menos um ponto do grid que satisfaça L1 (hitRate@3=1,00) e L3 (100% ordem)
-    /// simultaneamente (regra de calibração: "descartar quem viola L1/L3 → maior meanPrecision@5,
-    /// arredondado para baixo em passos de 0,05, nunca abaixo de 0,70"). Se nenhum ponto do grid
-    /// sobrevive a esse primeiro filtro (ver <see cref="ConfiguredWeights_AreNotDominatedByTheDeclaredGrid"/>),
-    /// o piso permanece o da spec, nenhum peso é escolhido, e a decisão (corpus/consultas/provedor/
-    /// dimensão, ou ratificar um piso menor) é do dono, via ADR — ver o relatório da task que rodou
-    /// este teste para o resultado medido.
+    /// L2 (spec.md "Medição do Case → Limiares"): piso original da spec era 0,70, "só pode SUBIR" —
+    /// mas a T11 reexecutada (MET-524, corpus vetorizado com qwen3-embedding-0.6b) mediu que o ÚNICO
+    /// ponto do grid elegível a L1 (hitRate@3=1,00) e L3 (100% ordem) simultaneamente
+    /// (w_s=0,9, τ=5 — ver <see cref="ConfiguredWeights_AreNotDominatedByTheDeclaredGrid"/>) fica em
+    /// meanPrecision@5 = 0,41, abaixo de 0,70. Leave-one-out sobre o corpus real (150 descrições,
+    /// cada uma como consulta contra as outras 149) mede meanPrecision@5 = 0,7173 — a evidência de
+    /// que o teto é a distintividade do corpus entre especialidades, não o modelo nem a fórmula (ver
+    /// eval/README.md, "Hipóteses"). O dono ratificou, via
+    /// <c>project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md</c> (repo do harness,
+    /// que supersede PARCIALMENTE a ADR-003 só neste ponto), um piso menor derivado pela MESMA regra
+    /// de arredondamento da spec (spec.md:161, para baixo em passos de 0,05) aplicada ao valor medido:
+    /// <c>floor(0,41 / 0,05) × 0,05 = 0,40</c>. A partir de agora L2 deixa de ser ambição de
+    /// qualidade — a métrica está limitada pela composição do corpus, não pelo ranking — e passa a
+    /// ser GUARDA DE REGRESSÃO: existe para pegar uma mudança futura que derrube meanPrecision@5, não
+    /// para certificar "boa o bastante" em sentido absoluto. Recalibrar este valor de novo exige uma
+    /// ADR nova que supersede a ADR-005 — nunca edição desta constante.
     /// </summary>
-    private const double L2Threshold = 0.70;
+    private const double L2Threshold = 0.40;
 
     /// <summary>Tolerância de empate da regra de escolha (spec.md "Medição do Case → Calibração dos pesos").</summary>
     private const double TieTolerance = 0.02;

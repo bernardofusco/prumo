@@ -52,12 +52,19 @@ prumo/
 > `db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json` e
 > `eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (consultas do golden set, T10) estão
 > versionados e são o caminho padrão (`Embeddings__Provider=precomputed`). **A medição contra o
-> golden set (T11) já rodou duas vezes** (BSC-15..18) — a primeira, contra `bge-m3`, reprovou
+> golden set (T11) rodou duas vezes** (BSC-15..18) — a primeira, contra `bge-m3`, reprovou
 > (`hitRate@3 = 0,75`); a segunda, contra `qwen3-embedding-0.6b` e com a consulta `gs-07` revisada,
-> fecha L1 e L4 (`hitRate@3 = 1,00`) mas **ainda não fecha L2** (`meanPrecision@5 ≥ 0,70` — o melhor
-> ponto do grid mede 0,41; ver `eval/README.md`, "Grid de calibração e limiares"). A **ratificação
-> dos pesos** (BSC-20/21, ADR-003) segue pendente porque a régua não fechou — nenhum peso foi
-> escolhido, `appsettings.json` permanece provisório. Buscar por uma das 150 descrições literais do
+> fechou L1 e L4 (`hitRate@3 = 1,00`) mas não fechava L2 contra o piso ORIGINAL da spec
+> (`meanPrecision@5 ≥ 0,70` — o melhor ponto do grid mede 0,41). Leave-one-out sobre o corpus real
+> (150 descrições, cada uma como consulta contra as outras 149) mostrou por que: `meanPrecision@5 =
+> 0,7173` mesmo no cenário mais favorável concebível — o teto é a distintividade do corpus entre
+> especialidades, não o modelo nem a fórmula (ver `eval/README.md`, "Grid de calibração e limiares").
+> **O dono ratificou, via `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`
+> (repo do harness, 2026-08-11), um piso `L2 = 0,40`** — derivado mecanicamente do valor medido no
+> único ponto elegível a L1/L3 pela mesma regra de arredondamento que a spec já declarava — e os pesos
+> que a regra de escolha da spec já apontava (`SemanticWeight = 0,9`, `ProximityWeight = 0,1`,
+> `DistanceDecayKm = 5`), agora gravados em `appsettings.json`. **A régua do M1 fecha**: L1, L2
+> (revisado), L3 e L4 satisfeitos. Buscar por uma das 150 descrições literais do
 > corpus, ou por qualquer uma das ~20 consultas do golden set, funciona com vetor semântico real;
 > texto livre arbitrário fora dessa lista responde `422` (ver seção
 > "Busca" → "Sem provedor de embeddings configurado"). O agendamento sob concorrência é o M2. Este
@@ -288,13 +295,16 @@ e são o default de `Embeddings__PrecomputedPaths__0`/`__1` em `.env.example`, c
 O ranking é medido contra `eval/golden-set.json` — 20 consultas em linguagem de cliente, com
 resultado esperado, versionadas no repo. O que a régua mede, os limiares, o grid de calibração e a
 composição verificada por teste estão documentados em **[`eval/README.md`](eval/README.md)**. A
-medição (`Category=Integration`, `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`) **já
-rodou duas vezes**: contra `bge-m3` (2026-08-10, reprovou — `hitRate@3 = 0,75`) e, depois da troca de
+medição (`Category=Integration`, `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`) **rodou
+duas vezes**: contra `bge-m3` (2026-08-10, reprovou — `hitRate@3 = 0,75`) e, depois da troca de
 modelo e da revisão da consulta `gs-07` (MET-524, 2026-08-11, `project/adr/ADR-004-...md` no repo do
-harness), contra `qwen3-embedding-0.6b` — que fecha L1 e L4 (`hitRate@3 = 1,00`) mas **ainda não
-fecha L2** (`meanPrecision@5 ≥ 0,70`; melhor ponto do grid: 0,41). A tabela completa (18 pontos,
-só-semântica vs. híbrido) está em `eval/README.md`, "Grid de calibração e limiares" — nenhum peso foi
-escolhido, `appsettings.json` permanece com os valores provisórios.
+harness), contra `qwen3-embedding-0.6b` — que fechou L1 e L4 (`hitRate@3 = 1,00`) mas não fechava L2
+contra o piso ORIGINAL da spec (`meanPrecision@5 ≥ 0,70`; melhor ponto do grid: 0,41). O dono
+ratificou um piso menor (`L2 = 0,40`, arredondamento mecânico do valor medido) e os pesos apontados
+pela regra de escolha (`w_s = 0,9`, `τ = 5`) via `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`
+(repo do harness, 2026-08-11) — **a régua do M1 fecha** com esses valores gravados em
+`appsettings.json`. A tabela completa (18 pontos, só-semântica vs. híbrido), o racional da mudança de
+piso e as mitigações contra sobreajuste estão em `eval/README.md`, "Grid de calibração e limiares".
 
 ### Testes e gates
 

@@ -1,5 +1,15 @@
 # `eval/` — a régua do M1 (busca com ranking híbrido)
 
+> **Piso `L2` revisado (2026-08-11).** Este documento é lido de forma sequencial e várias seções
+> abaixo (escritas ANTES da medição, de propósito) tratam `meanPrecision@5 ≥ 0,70` como o piso
+> vigente — e ficam exatamente como foram escritas, intactas, porque reescrever análise pré-medição
+> para casar com o resultado seria o problema que este projeto existe para evitar. **O piso vigente
+> hoje é `L2 ≥ 0,40`**, ratificado via
+> `project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` (repo do harness) depois de a
+> T11 reexecutada medir que o melhor ponto do grid elegível a L1/L3 fica em `meanPrecision@5 = 0,41`.
+> Racional completo, número antigo, número novo e o porquê: seção "Piso `L2` baixado de 0,70 para
+> 0,40 (ADR-005, 2026-08-11)", mais abaixo.
+
 Este diretório é o instrumento de medição da MET-479 (`specs/features/met-479-busca-ranking-hibrido/`,
 seção **"Medição do Case"**, normativa). Ele existe para uma frase só: *"vazamento no banheiro"
 encontra encanador sem a palavra "encanador" aparecer em lugar nenhum* — e esse README documenta como
@@ -195,6 +205,12 @@ o teto) alcançar 0,70, as 15 consultas sem localização precisam mediar `preci
 seus tetos (0,40/0,40/0,20/0,20/0,20 = 1,40 no total). Isso não é um piso novo — é a mesma régua L2 da
 spec, só com a aritmética explícita para que a T11 saiba, antes de medir, onde a margem real está.
 
+> **Nota de encaminhamento:** esta seção inteira é pré-medição e trata 0,70 como o piso vigente de
+> propósito — preservada intacta. A T11 mediu que a margem projetada aqui não se concretizou
+> (`meanPrecision@5` ficou em 0,39–0,41 em todo o grid, não perto de 0,84 nas consultas sem
+> localização); o piso vigente hoje é `L2 ≥ 0,40` (ADR-005) — ver "Piso `L2` baixado de 0,70 para 0,40"
+> mais abaixo para a medição real e o porquê.
+
 ## Ordem de diagnóstico se L2 falhar (fixada antes de qualquer medição)
 
 Declarada agora, **antes** de a T11 rodar o eval contra vetores reais, para que uma medição abaixo do
@@ -263,7 +279,7 @@ desta seção (`hitRate@3 = 0,60 < 1,00`), mas fica registrado — a régua não
 mudou. Este número é informativo (prova a propriedade que a asserção do teste exige); o valor
 oficial, ao lado de semântica e híbrido na mesma tabela, é o que a T11 publica.
 
-## Grid de calibração e limiares — MEDIDO (T11 reexecutada, MET-524), régua NÃO fechou
+## Grid de calibração e limiares — MEDIDO (T11 reexecutada, MET-524); régua fecha com `L2` revisado (ADR-005)
 
 **Medição real** (2026-08-11), `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`, contra
 Postgres + pgvector real (Testcontainers), corpus semeado com os vetores REAIS de
@@ -282,26 +298,36 @@ de construção — `project/adr/ADR-004-modelo-de-embeddings-qwen3-e-revisao-gs
 harness). Esta seção registra a medição **depois** dessa mudança — uma única vez, sem segunda
 rodada de ajuste (disciplina da própria MET-524).
 
-⛔ **Resultado: `hitRate@3 = 1,00` no ponto configurado (L1 e L4 fecham) e L3 é alcançável em alguns
-pontos do grid, mas NENHUM ponto do grid satisfaz `meanPrecision@5 ≥ 0,70` (L2)** — o melhor
-`meanPrecision@5` entre os pontos elegíveis (que satisfazem L1 e L3 juntos) é **0,41**, bem abaixo do
-piso. Por isso a T11 **PARA aqui** de novo — não escolhe pesos, não sobe o piso L2, não altera
-`appsettings.json`, não toca `golden-set.json`. A tabela abaixo é a saída real e completa do teste
-(nenhum ponto foi omitido):
+⛔→✅ **Resultado da medição (inalterado desde a primeira leitura desta T11): `hitRate@3 = 1,00` no
+ponto configurado (L1 e L4 fecham) e L3 é alcançável em um único ponto do grid, mas NENHUM ponto do
+grid satisfaz `meanPrecision@5 ≥ 0,70` (o piso ORIGINAL da spec)** — o melhor `meanPrecision@5` entre
+os pontos elegíveis (que satisfazem L1 e L3 juntos) é **0,41**, bem abaixo de 0,70. Diante disso a T11
+**parou e reportou** — exatamente o que `spec.md:163-165` manda quando o melhor ponto do grid fica
+abaixo do piso: "o dono decide... ou ratifica um limiar menor via ADR. Nenhum agente escolhe". Nenhum
+peso foi escolhido por este agente, nenhum piso foi alterado por este agente, nada em
+`golden-set.json` foi tocado.
+
+**O dono decidiu** (2026-08-11, fora desta task, registrado em
+`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` no repo do harness): ratificar
+um piso menor, derivado da MESMA regra aritmética que a spec já usa para o caso simétrico de subir o
+piso (`spec.md:161`, arredondar para baixo em passos de 0,05), aplicada ao valor medido no único ponto
+elegível. Ver "Piso `L2` baixado de 0,70 para 0,40", logo após a tabela, para o número antigo, o novo
+e o porquê. A tabela abaixo é a saída real e completa do teste (nenhum ponto foi omitido) — os NÚMEROS
+medidos não mudam; o que muda é o piso contra o qual eles são julgados:
 
 | `semanticWeight` | `distanceDecayKm` | `hitRate@3` | `meanPrecision@5` | ordem 100%? | L1&L3? |
 |---|---|---|---|---|---|
 | 1,0 | 5  | 1,00 | 0,41 | não (1/2) | não |
 | 1,0 | 10 | 1,00 | 0,41 | não (1/2) | não |
 | 1,0 | 20 | 1,00 | 0,41 | não (1/2) | não |
-| 0,9 | 5  | 1,00 | 0,41 | **sim (2/2)** | **sim** |
+| **0,9** | **5** *(adotado — appsettings.json)* | **1,00** | **0,41** | **sim (2/2)** | **sim** |
 | 0,9 | 10 | 0,95 | 0,41 | sim (2/2) | não |
 | 0,9 | 20 | 0,95 | 0,41 | sim (2/2) | não |
 | 0,8 | 5  | 1,00 | 0,40 | não (1/2) | não |
 | 0,8 | 10 | 1,00 | 0,40 | não (1/2) | não |
 | 0,8 | 20 | 0,95 | 0,41 | sim (2/2) | não |
 | 0,7 | 5  | 0,95 | 0,40 | não (1/2) | não |
-| 0,7 | 10 *(configurado, provisório)* | 1,00 | 0,40 | não (0/2) | não |
+| 0,7 | 10 | 1,00 | 0,40 | não (0/2) | não |
 | 0,7 | 20 | 1,00 | 0,40 | não (1/2) | não |
 | 0,6 | 5  | 0,95 | 0,40 | não (0/2) | não |
 | 0,6 | 10 | 0,95 | 0,40 | não (0/2) | não |
@@ -312,9 +338,10 @@ piso. Por isso a T11 **PARA aqui** de novo — não escolhe pesos, não sobe o p
 
 Só **um** dos 18 pontos (`w_s=0,9 / τ=5`) satisfaz L1 e L3 simultaneamente — o subconjunto elegível
 da regra de escolha da spec não está mais vazio como na medição contra `bge-m3`, mas o único elegível
-mede `meanPrecision@5 = 0,41`, abaixo do piso 0,70. A regra de calibração do L2 ("o piso medido pode
-subir, nunca descer") não se aplica: o número medido no único ponto elegível está abaixo do piso
-fixado pela spec, não acima dele.
+mede `meanPrecision@5 = 0,41`, abaixo do piso ORIGINAL de 0,70 da spec. A regra de calibração do L2
+para SUBIR o piso ("o piso medido pode subir, nunca descer") não se aplica aqui: o número medido no
+único ponto elegível está abaixo do piso fixado pela spec, não acima dele — é o outro ramo que a
+própria spec já previa (`spec.md:163-165`) e que motivou a decisão do dono documentada logo abaixo.
 
 Para referência (baseline lexical, determinístico, sem vetor nenhum, recalculado contra o golden set
 desta revisão — ver "Baseline lexical" acima): `hitRate@3 = 0,60` (baseline lexical) < `0,85`–`1,00`
@@ -328,21 +355,79 @@ pontos de `τ`, mas falha L3 (1/2) nos três — sem proximidade no score, os do
 elegível (`0,9/5`) já é híbrido, com peso de proximidade pequeno (0,1) — é o suficiente para resolver
 a ordem sem alterar `hitRate@3`.
 
-**Pesos escolhidos: NÃO ESCOLHIDOS.** A regra de escolha da spec ("descartar pontos que violem L1 ou
-L3 → maior `meanPrecision@5` → empate...") tem, desta vez, um sobrevivente ao primeiro filtro
-(`0,9/5`) — mas ele mede `meanPrecision@5 = 0,41`, abaixo do piso 0,70 que a régua exige antes de
-qualquer pergunta de desempate. `appsettings.json:Ranking` permanece com os valores PROVISÓRIOS da T1
-(0,7 / 0,3 / 10 / 0,0, comentário "provisório" mantido) — escolher `0,9/5` seria promover um ponto
-que a própria régua não aprova.
+### Piso `L2` baixado de 0,70 para 0,40 (ADR-005, 2026-08-11)
 
-**Limiar L2: NÃO RATIFICÁVEL a partir desta medição.** O piso permanece o da spec (0,70).
+**Pesos escolhidos: `semanticWeight = 0,9`, `proximityWeight = 0,1`, `distanceDecayKm (τ) = 5`.** A
+regra de escolha da spec (`spec.md:177-182`: "descartar pontos que violem L1 ou L3 → maior
+`meanPrecision@5` → empate...") tem, desta medição, exatamente **um** sobrevivente ao primeiro filtro
+(`0,9/5`) — não há empate a resolver, a regra termina no primeiro passo. `appsettings.json:Ranking`
+foi atualizado com estes valores (era 0,7 / 0,3 / 10 / 0,0 — os provisórios da T1); o comentário
+"provisório" foi removido e substituído pela referência à medição e à ADR-005.
+
+**Limiar `L2`: RATIFICADO em 0,40 — piso ANTIGO 0,70, piso NOVO 0,40, decisão do dono via ADR, nunca
+em silêncio.** O único ponto elegível a L1/L3 mede `meanPrecision@5 = 0,41`. Como esse valor fica
+ABAIXO do piso original (não acima), a regra de calibração do L2 para SUBIR não se aplica; o cenário é
+o outro que a spec já previa (`spec.md:163-165`): "se o melhor ponto ficar abaixo de 0,70... ratificar
+um limiar menor via ADR. Nenhum agente escolhe." O dono ratificou, em
+`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` (repo do harness), um piso
+NOVO derivado pela MESMA regra aritmética que a spec usa para o caso simétrico de subir o piso
+(`spec.md:161`, arredondar para baixo em passos de 0,05) aplicada ao valor medido:
+
+```
+L2 = floor(0,41 / 0,05) × 0,05 = 0,40
+```
+
+**Por que isso não é "afrouxar a régua até passar".** O número não foi escolhido para caber — ele sai
+mecanicamente da mesma fórmula que a spec já declarava, aplicada ao único ponto elegível, medido antes
+de qualquer decisão de piso ser tomada. A causa do teto foi isolada com evidência direta, não palpite:
+leave-one-out sobre as 150 descrições reais do corpus (cada uma usada como consulta contra as outras
+149, via `<=>`) mede `meanPrecision@5 = 0,7173` — mesmo no cenário mais favorável concebível (a
+"consulta" é o texto literal de uma descrição do corpus), só 3,6 dos 5 vizinhos mais próximos são da
+mesma especialidade. Combinando essa medição com o teto estrutural das 5 consultas com localização
+(1,40 no agregado, já registrado acima): `teto realista = (15 × 0,7173 + 1,40) / 20 ≈ 0,61` — abaixo
+do 0,70 original mesmo no melhor caso possível. Ver "Hipóteses" abaixo para a cadeia completa de
+diagnóstico (modelo → corpus → fórmula) que chegou a essa conclusão.
+
+**O que `L2 = 0,40` passa a significar.** Deixou de ser uma ambição de qualidade — a métrica está
+limitada pela composição do corpus (15 especialidades de vocabulário próximo entre si), não pelo
+ranking, e nenhum modelo nem combinação de pesos neste espaço a move. `L2` passa a ser uma **guarda de
+regressão**: existe para que uma mudança futura que derrube `meanPrecision@5` (um refactor que quebra
+o cálculo de score, uma troca de modelo que piora a semântica, um peso mal calibrado) seja pega pelo
+teste — não para certificar que a busca está "boa o bastante" em sentido absoluto.
+
+**O tamanho real da folga (0,41 → 0,40), medido, não estimado.** `precision@5` por consulta é `k/5`
+(`k ∈ {0..5}`) — o denominador é sempre 5 porque `n ≥ 5` nas 20 consultas do golden set (mesmo as 5
+com localização têm de 8 a 18 candidatos dentro do raio, ver "Teto estrutural" acima) — logo cada
+`precision@5` é múltiplo de 0,2, e `meanPrecision@5` (a média de 20 desses valores) só assume
+múltiplos de `0,2 / 20 = 0,01`. A folga `0,41 − 0,40 = 0,01` é **exatamente uma unidade dessa
+granularidade — a menor folga não-nula que a métrica consegue expressar**: uma única consulta
+perdendo um relevante do top-5 ainda passa; duas perdas dessa magnitude (na mesma consulta ou em
+consultas diferentes) reprovam.
+
+**O que não foi feito, e por quê.** O dono decidiu, explicitamente, não mexer no corpus
+(`db/seed/professionals.json`) nem nas 20 consultas (`eval/golden-set.json`) — a alavanca que a
+evidência do leave-one-out sugeriria como a única capaz de mover `meanPrecision@5` de verdade — para
+não reabrir a medição inteira nesta altura do case. Fica registrado como gatilho de revisão da
+ADR-005, não como ação tomada aqui.
 
 **`MinSemanticScore`: mantido em 0.** O problema medido não é ruído (candidato irrelevante entrando
 por proximidade) — é precisão insuficiente mesmo sem localização nenhuma (as 15 consultas sem
 localização têm o mesmo `precision@5` em todo o grid, porque sem localização a proximidade não entra
-e o score é a semântica bruta — D4/ADR-003). Cortar
-pelo fator semântico não resolveria uma questão de quantos candidatos de OUTRAS especialidades ficam
-misturados no top-5 — ver hipóteses abaixo.
+e o score é a semântica bruta — D4/ADR-003). Cortar pelo fator semântico não tem evidência de resolver
+uma questão de quantos candidatos de OUTRAS especialidades ficam misturados no top-5 (ver hipóteses
+abaixo); ligar o corte sem essa evidência fica registrado como gatilho de revisão da ADR-005, não
+decisão tomada aqui.
+
+**Sobreajuste, com o vencedor já conhecido — dito sem rodeio.** Desta vez a regra de escolha produziu
+um vencedor (`0,9/5`), e as três mitigações declaradas antes de medir continuam valendo: o grid é
+pequeno e foi fixado *a priori* (não se ampliou depois de ver o resultado desfavorável na primeira
+leitura desta mesma T11); a regra de desempate favoreceria o modelo mais simples se houvesse mais de
+um ponto elegível empatado — aqui nem chegou a ser necessária, porque só um ponto sobreviveu ao
+primeiro filtro; a tabela **inteira** (18 pontos) é publicada acima, não só o vencedor. O piso `L2`,
+por sua vez, não foi calibrado contra o mesmo conjunto que ele avalia no sentido de "escolher o número
+que passa" — ele é uma função determinística (arredondamento) do valor medido no ponto já escolhido
+pela regra independente dos pesos. Vinte consultas continuam medindo uma direção, não uma garantia; a
+mudança de piso é sobre reconhecer o teto real dessa direção, não sobre fingir uma garantia maior.
 
 ### Hipóteses (ordem de diagnóstico pré-comprometida, aplicada à medição real)
 
@@ -430,25 +515,24 @@ especialidade esperada, independentemente de qual dos dois modelos gerou os veto
    combinação de peso e `τ` resolve um problema que está na composição do corpus, não na combinação
    dos dois fatores.
 
-**Conclusão desta task:** a régua não fecha, mesmo depois de resolver a causa que a medição anterior
-apontava (o modelo). O gargalo agora é `meanPrecision@5`, e a hipótese com evidência mais forte não é
-mais só inferência por eliminação — é **medida diretamente**: a distintividade intrínseca do corpus
-(leave-one-out, `meanPrecision@5 = 0,7173`) projeta um teto realista de **≈ 0,61** para o golden set
-completo, abaixo do piso 0,70 mesmo no cenário mais favorável possível. O corpus (15 especialidades
-de 10 profissionais cada, com vocabulário de "serviço doméstico" suficientemente próximo entre elas)
-não é distintivo o bastante para este piso, com nenhum modelo de embeddings nem nenhuma combinação de
-pesos. A decisão sobre como prosseguir (ampliar o corpus por especialidade, tornar as descrições mais
-distintivas, aceitar um corpus/golden-set revisado — fora da janela livre, exige ADR — ou ratificar
-um piso L1/L2 menor) é do dono, via ADR que supersede a ADR-003 e/ou a spec desta issue. Nenhuma
-dessas ações foi tomada por este agente.
+**Conclusão da medição (T11 reexecutada, MET-524):** a causa que a primeira medição apontava (o
+modelo) foi resolvida — `hitRate@3` subiu de 0,75 para 1,00. O gargalo remanescente é
+`meanPrecision@5`, e a hipótese com evidência mais forte não é só inferência por eliminação — é
+**medida diretamente**: a distintividade intrínseca do corpus (leave-one-out,
+`meanPrecision@5 = 0,7173`) projeta um teto realista de **≈ 0,61** para o golden set completo, abaixo
+do piso ORIGINAL de 0,70 mesmo no cenário mais favorável possível. O corpus (15 especialidades de 10
+profissionais cada, com vocabulário de "serviço doméstico" suficientemente próximo entre elas) não é
+distintivo o bastante para o piso original, com nenhum modelo de embeddings nem nenhuma combinação de
+pesos.
 
-**Sobreajuste, dito sem rodeio:** calibrar até 18 pontos contra as mesmas 20 consultas que os avaliam
-seria sobreajuste se um vencedor tivesse sido escolhido — o grid é pequeno e declarado *a priori* (não
-se amplia depois de ver o resultado, e não se ampliou aqui apesar do resultado desfavorável); o
-desempate favoreceria o modelo mais simples (maior `semanticWeight`, menor dependência do fator
-geográfico) se houvesse mais de um ponto elegível empatado; a tabela **inteira** é publicada, não só
-um vencedor (que, neste caso, mede abaixo do piso). Vinte consultas medem uma direção, não uma
-garantia — e aqui a direção medida é "melhor, ainda não suficiente".
+**Decisão do dono (2026-08-11, registrada em ADR-005, fora desta medição):** em vez de ampliar o
+corpus, tornar as descrições mais distintivas ou revisar o golden set — qualquer uma reabriria a
+medição inteira —, o dono ratificou um piso `L2` menor (0,40, derivado mecanicamente do valor medido
+no único ponto elegível pela mesma regra de arredondamento que a spec já usa) e os pesos que a regra
+de escolha já apontava (`w_s=0,9`, `τ=5`). Com isso, a régua do M1 fecha: `L1`, `L2` (revisado), `L3` e
+`L4` todos satisfeitos no ponto agora configurado em `appsettings.json`. Ver a seção "Piso `L2` baixado
+de 0,70 para 0,40" acima para o racional completo, e
+`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md` (repo do harness) para a ADR.
 
 ## Congelamento
 
@@ -543,7 +627,7 @@ acima). Trocar de modelo/quantização é o mesmo comando com `Embeddings__Model
 `Eval__OutputPath=eval/embeddings/<modelo-novo>.json` — nome de arquivo novo, mesma convenção do
 corpus (`PrecomputedEmbeddingStore.Load` detecta `model` divergente entre arquivos e derruba o boot).
 
-## Pendência conhecida
+## Estado atual: régua fechada (ADR-005, 2026-08-11)
 
 **T10 regenerada com o modelo novo** (2026-08-11, MET-524): `db/seed/embeddings/text-embedding-qwen3-embedding-0.6b.json`
 (corpus, T9) e `eval/embeddings/text-embedding-qwen3-embedding-0.6b.json` (consultas do golden set,
@@ -551,9 +635,17 @@ T10) existem, ambos com `model: "openai-compatible:text-embedding-qwen3-embeddin
 artefatos do `bge-m3` foram removidos. **T11 rodou pela segunda vez** (a primeira, contra `bge-m3`,
 está preservada apenas na branch `met-479-t11`, não mesclada) — `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`
 mede as 20 consultas contra Postgres + pgvector real, com vetores REAIS, pela mesma camada de busca
-da API. **A régua ainda não fechou**: L1 e L4 fecham (`hitRate@3 = 1,00` no ponto configurado), L3 é
-alcançável em um ponto do grid, mas **nenhum ponto satisfaz L2** (`meanPrecision@5 ≥ 0,70`) — o
-melhor ponto elegível mede 0,41. A tabela completa medida, a comparação só-semântica vs. híbrido e as
-hipóteses (ordem de diagnóstico pré-comprometida) estão na seção "Grid de calibração e limiares"
-acima. **Nenhum peso foi escolhido, nenhum limiar foi ratificado, `appsettings.json` permanece com os
-valores provisórios da T1** — a decisão sobre como prosseguir é do dono.
+da API. Essa segunda medição fechou L1 e L4 (`hitRate@3 = 1,00`), tornou L3 alcançável em um ponto do
+grid, mas não fechou L2 contra o piso ORIGINAL da spec (`meanPrecision@5 ≥ 0,70` — o melhor ponto
+elegível mede 0,41). A tabela completa medida, a comparação só-semântica vs. híbrido, as hipóteses
+(ordem de diagnóstico pré-comprometida) e a evidência de teto estrutural do corpus estão na seção
+"Grid de calibração e limiares" acima.
+
+**Fora desta medição, o dono decidiu** (`project/adr/ADR-005-piso-l2-baixado-e-pesos-do-ranking-calibrados.md`,
+repo do harness, 2026-08-11): ratificar `L2 = 0,40` — derivado mecanicamente do valor medido no único
+ponto elegível pela mesma regra de arredondamento que a spec já declarava — e adotar os pesos que a
+regra de escolha já apontava (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`). `appsettings.json:Ranking` foi
+atualizado com esses valores; `GoldenSetEvalTests.L2Threshold` foi atualizado para 0,40, com comentário
+citando a ADR-005. **A régua do M1 fecha**: L1, L2 (revisado), L3 e L4 satisfeitos no ponto configurado.
+Corpus, golden set, artefatos, L1, L3 e o grid de 18 pontos permanecem exatamente como estavam — nada
+disso foi tocado por esta decisão.
