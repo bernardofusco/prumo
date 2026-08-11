@@ -28,6 +28,16 @@
     <Content Include="..\..\db\seed\embeddings\*.json"
              Link="db\seed\embeddings\%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Vetores pré-computados das consultas do golden set (eval/embeddings/, MET-479/T10) — mesmo
+      motivo do item acima: este processo (ingestão) não lê este arquivo hoje, mas
+      Embeddings:PrecomputedPaths pode listar os dois artefatos independentemente do provider
+      configurado (PrecomputedEmbeddingStore.Load valida TODOS os caminhos recebidos), então a cópia
+      precisa existir aqui também para não quebrar o boot do Seed quando isso acontecer.
+    -->
+    <Content Include="..\..\eval\embeddings\*.json"
+             Link="eval\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
