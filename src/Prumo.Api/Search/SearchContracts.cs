@@ -80,10 +80,18 @@ public sealed record SearchScoreFactors(
 /// qualquer busca — consultas de demonstração, cidades do corpus, o modo de embedding CONFIGURADO e
 /// os defaults de resultado. Mesmo padrão de <c>record</c> com <see cref="JsonPropertyNameAttribute"/>
 /// explícito que <see cref="SearchResponse"/> já usa.
+///
+/// <para>
+/// <see cref="MaxQueryLength"/> (MET-516) é o mesmo <c>Search:MaxQueryLength</c> que
+/// <c>SearchRequestValidator</c> aplica no servidor — exposto aqui para que a tela limite o campo de
+/// busca e avise da proximidade do limite SEM duplicar o número em dois lugares que possam divergir
+/// (o servidor continua sendo a única fonte de verdade; este campo só a publica).
+/// </para>
 /// </summary>
 public sealed record SearchOptionsResponse(
     [property: JsonPropertyName("embeddingMode")] string EmbeddingMode,
     [property: JsonPropertyName("defaultResultLimit")] int DefaultResultLimit,
+    [property: JsonPropertyName("maxQueryLength")] int MaxQueryLength,
     [property: JsonPropertyName("exampleQueries")] IReadOnlyList<string> ExampleQueries,
     [property: JsonPropertyName("cities")] IReadOnlyList<CityOption> Cities);
 

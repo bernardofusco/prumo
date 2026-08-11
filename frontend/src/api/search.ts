@@ -70,6 +70,12 @@ export interface CityOption {
 export interface SearchOptionsResponse {
   readonly embeddingMode: string
   readonly defaultResultLimit: number
+  /**
+   * Mesmo `Search:MaxQueryLength` que o servidor aplica em `GET /api/search` (MET-516) — única fonte
+   * de verdade; o frontend nunca declara esse número por conta própria, só o usa para limitar o
+   * campo e avisar da proximidade do limite antes do 400.
+   */
+  readonly maxQueryLength: number
   readonly exampleQueries: readonly string[]
   readonly cities: readonly CityOption[]
 }
@@ -317,6 +323,7 @@ function isSearchOptionsResponseShape(value: unknown): value is SearchOptionsRes
     isRecord(value) &&
     typeof value.embeddingMode === 'string' &&
     typeof value.defaultResultLimit === 'number' &&
+    typeof value.maxQueryLength === 'number' &&
     Array.isArray(value.exampleQueries) &&
     value.exampleQueries.every((item): item is string => typeof item === 'string') &&
     Array.isArray(value.cities) &&

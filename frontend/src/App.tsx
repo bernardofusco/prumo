@@ -118,6 +118,9 @@ function App() {
   const cities = optionsState.status === 'success' ? optionsState.data.cities : EMPTY_CITIES
   const exampleQueries =
     optionsState.status === 'success' ? optionsState.data.exampleQueries : EMPTY_EXAMPLE_QUERIES
+  // null enquanto as opções não chegaram (ou falharam) — SearchForm não aplica maxLength/contador
+  // sem o valor real do servidor (MET-516, XML-doc de SearchFormProps.maxQueryLength).
+  const maxQueryLength = optionsState.status === 'success' ? optionsState.data.maxQueryLength : null
 
   return (
     <main>
@@ -137,6 +140,7 @@ function App() {
         onExampleQueryClick={handleExampleQueryClick}
         onSubmit={handleSubmit}
         isSubmitting={searchState.status === 'loading'}
+        maxQueryLength={maxQueryLength}
       />
 
       {optionsState.status === 'error' && (

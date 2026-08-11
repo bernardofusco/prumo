@@ -50,6 +50,7 @@ const VALID_SEARCH_BODY = {
 const VALID_OPTIONS_BODY = {
   embeddingMode: 'precomputed',
   defaultResultLimit: 10,
+  maxQueryLength: 200,
   exampleQueries: ['vazamento no banheiro'],
   cities: [{ name: 'Belo Horizonte', state: 'MG', latitude: -19.9245, longitude: -43.9352 }],
 }
@@ -362,6 +363,7 @@ describe('fetchSearchOptions', () => {
     if (result.ok) {
       expect(result.data.exampleQueries).toEqual(['vazamento no banheiro'])
       expect(result.data.cities).toHaveLength(1)
+      expect(result.data.maxQueryLength).toBe(200)
     }
   })
 
@@ -415,6 +417,18 @@ describe('fetchSearchOptions', () => {
 
   it('retorna "network" quando um item de exampleQueries não é string', async () => {
     const malformed = { ...VALID_OPTIONS_BODY, exampleQueries: [123] }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(malformed)))
+
+    const result = await fetchSearchOptions()
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe('network')
+    }
+  })
+
+  it('retorna "network" quando maxQueryLength tem o tipo errado (string em vez de number)', async () => {
+    const malformed = { ...VALID_OPTIONS_BODY, maxQueryLength: '200' }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(malformed)))
 
     const result = await fetchSearchOptions()

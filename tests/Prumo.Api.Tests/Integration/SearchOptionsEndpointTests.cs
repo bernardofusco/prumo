@@ -82,14 +82,17 @@ public sealed class SearchOptionsEndpointTests(PostgresIntegrationFixture fixtur
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
 
-        // Contrato exato (design.md §6/§3.5): as quatro chaves de topo, nada a mais nem a menos.
-        // defaultResultLimit e embeddingMode têm testes DEDICADOS abaixo (com valor injetado pelo
-        // teste, não o literal do appsettings.json) — achado do review do ciclo 1: comparar aqui
-        // contra "10"/"degraded" fixos deixaria passar um handler que devolvesse esses valores
-        // hardcoded, sem ler configuração nenhuma.
+        // Contrato exato (design.md §6/§3.5): as cinco chaves de topo, nada a mais nem a menos.
+        // defaultResultLimit, maxQueryLength e embeddingMode têm testes DEDICADOS abaixo (com valor
+        // injetado pelo teste, não o literal do appsettings.json) — achado do review do ciclo 1:
+        // comparar aqui contra "10"/"degraded" fixos deixaria passar um handler que devolvesse esses
+        // valores hardcoded, sem ler configuração nenhuma.
         var topLevelNames = root.EnumerateObject().Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
         Assert.Equal(
-            new HashSet<string>(StringComparer.Ordinal) { "embeddingMode", "defaultResultLimit", "exampleQueries", "cities" },
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "embeddingMode", "defaultResultLimit", "maxQueryLength", "exampleQueries", "cities",
+            },
             topLevelNames);
 
         var citiesElement = root.GetProperty("cities");
@@ -147,6 +150,39 @@ public sealed class SearchOptionsEndpointTests(PostgresIntegrationFixture fixtur
         using var document = JsonDocument.Parse(body);
 
         Assert.Equal(distinctiveConfiguredLimit, document.RootElement.GetProperty("defaultResultLimit").GetInt32());
+    }
+
+    /// <summary>
+    /// MET-516: <c>maxQueryLength</c> existe para que a tela limite o campo de busca e avise da
+    /// proximidade do limite SEM duplicar <c>Search:MaxQueryLength</c> em dois lugares que possam
+    /// divergir. Mesmo padrão de <see cref="GetSearchOptions_ReturnsDefaultResultLimitFromConfiguration_NotTheAppSettingsLiteral"/>
+    /// — injeta um valor DISTINTIVO (123, nenhum outro número de configuração usado nesta suíte) via
+    /// <c>Search:MaxQueryLength</c> e afirma que é ele, não o literal de <c>appsettings.json</c> (200),
+    /// que volta na resposta.
+    /// </summary>
+    [Fact]
+    public async Task GetSearchOptions_ReturnsMaxQueryLengthFromConfiguration_NotTheAppSettingsLiteral()
+    {
+        await EnsureRealCorpusSeededAsync();
+
+        const int distinctiveConfiguredMaxQueryLength = 123;
+
+        await using var factory = CreateFactory(fixture.ConnectionString, webHostBuilder =>
+            webHostBuilder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Search:MaxQueryLength"] = distinctiveConfiguredMaxQueryLength.ToString(CultureInfo.InvariantCulture),
+                })));
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(new Uri("/api/search/options", UriKind.Relative));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+
+        Assert.Equal(distinctiveConfiguredMaxQueryLength, document.RootElement.GetProperty("maxQueryLength").GetInt32());
     }
 
     /// <summary>
