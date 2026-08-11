@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
+using Prumo.Api.Embeddings;
+
 namespace Prumo.Api.Tests;
 
 /// <summary>
@@ -23,6 +25,11 @@ public sealed class SeedCorpusTests
     private static readonly string RepoRoot = ResolveRepoRoot();
     private static readonly string SpecialtiesPath = Path.Combine(RepoRoot, "db", "seed", "specialties.json");
     private static readonly string ProfessionalsPath = Path.Combine(RepoRoot, "db", "seed", "professionals.json");
+
+    /// <summary>Artefato pré-computado versionado pela T9 (MET-478, gate humano) — ver "guarda do
+    /// artefato de embeddings" abaixo.</summary>
+    private static readonly string EmbeddingsArtifactPath =
+        Path.Combine(RepoRoot, "db", "seed", "embeddings", "text-embedding-bge-m3.json");
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -327,6 +334,46 @@ public sealed class SeedCorpusTests
         var specialty = new SpecialtySeed("eletricista", "Eletricista", ["eletricista", "elétric", "fiação"]);
 
         Assert.False(ContainsSpecialtyVocabulary("Resolvo quando a luz da cozinha fica piscando sem motivo.", specialty));
+    }
+
+    // ---- guarda do artefato de embeddings (T9, MET-478) ---------------------------------------
+
+    /// <summary>
+    /// Achado do Reviewer (T9/MET-478): NENHUM teste carregava o artefato de vetores versionado
+    /// (<c>db/seed/embeddings/text-embedding-bge-m3.json</c>) — sem esta guarda, editar uma
+    /// <c>serviceDescription</c> sem regenerar o artefato deixa LINT + TEST + INTEGRATION verdes, e a
+    /// quebra só aparece na ingestão de quem clona o repo (<c>PrecomputedEmbeddingProvider</c> lança
+    /// em runtime, contra banco real — <c>SeedDesyncTests</c>, <c>Category=Integration</c>, cobre
+    /// isso, mas só roda com Docker). Este teste é a versão "unit" da mesma régua: sem banco, sem
+    /// rede, roda em todo PR.
+    ///
+    /// <para>
+    /// Reusa, sem duplicar: <see cref="PrecomputedEmbeddingStore.Load"/> (a MESMA classe de produção
+    /// que a ingestão e a busca usam para carregar o artefato — não um parser JSON paralelo) e
+    /// <see cref="EmbeddingDocument.For"/>/<see cref="EmbeddingDocument.Hash"/> (as MESMAS funções
+    /// que <c>SeedRunner</c> usa para decidir re-embedding). Se o hash de QUALQUER descrição do
+    /// corpus real não estiver no artefato, é exatamente o sintoma que
+    /// <c>PrecomputedEmbeddingProvider.EmbedAsync</c> detectaria e rejeitaria em runtime (ING-11) —
+    /// este teste antecipa isso sem precisar de Postgres.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void EveryProfessionalServiceDescriptionHash_ExistsInThePrecomputedEmbeddingsArtifact()
+    {
+        var professionals = LoadProfessionals();
+        var store = PrecomputedEmbeddingStore.Load([EmbeddingsArtifactPath]);
+
+        var missing = professionals
+            .Where(p => !store.TryGetVector(EmbeddingDocument.Hash(EmbeddingDocument.For(p.ServiceDescription)), out _))
+            .Select(p => p.Slug)
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            $"{missing.Count} profissional(is) do corpus real sem vetor correspondente em " +
+            $"'{EmbeddingsArtifactPath}' (hash de EmbeddingDocument.Hash não encontrado no artefato): " +
+            $"{string.Join(", ", missing)}. A descrição mudou sem regenerar o artefato? Regenere com " +
+            "'dotnet run --project src/Prumo.Seed' usando Embeddings__Provider=openai-compatible " +
+            "(ver db/seed/README.md).");
     }
 
     // ---- infraestrutura de leitura -----------------------------------------------------------

@@ -190,7 +190,13 @@ public sealed class PrecomputedEmbeddingStore
         string json;
         try
         {
-            json = File.ReadAllText(path);
+            // ResolveConfiguredPath (achado do Reviewer, T9/MET-478): NÃO usa Directory.GetCurrentDirectory()
+            // — só entra em jogo quando `path` é relativo, e mesmo assim resolve contra
+            // AppContext.BaseDirectory (a saída do build, onde o artefato é copiado como Content —
+            // ver Prumo.Api.csproj/Prumo.Seed.csproj), nunca contra o cwd do processo. Toda mensagem
+            // abaixo continua citando `path` como CONFIGURADO (não o resolvido) — é o que a pessoa
+            // escreveu em Embeddings:PrecomputedPaths, e é isso que ela precisa reconhecer.
+            json = File.ReadAllText(ResolveConfiguredPath(path));
         }
         catch (IOException ex)
         {
@@ -253,6 +259,50 @@ public sealed class PrecomputedEmbeddingStore
 
         return new LoadedArtifact(dto.Model, entries);
     }
+
+    /// <summary>
+    /// Resolve <paramref name="path"/> contra <see cref="AppContext.BaseDirectory"/> quando ele for
+    /// relativo; devolve <paramref name="path"/> intacto quando já for absoluto (caminho de todos os
+    /// testes desta suíte, via <c>Path.GetTempPath()</c> — comportamento deles não muda).
+    ///
+    /// <para>
+    /// <b>Achado do Reviewer, T9/MET-478, corrigido aqui (padrão convencional — nunca <c>cwd</c> nem
+    /// <c>[CallerFilePath]</c>):</b> este tipo é carregado por DOIS processos com a MESMA chave de
+    /// configuração e o MESMO valor relativo documentado em <c>.env.example</c>
+    /// (<c>db/seed/embeddings/&lt;modelo&gt;.json</c>) — é a mesma variável de ambiente, compartilhada
+    /// por design (ver XML-doc da classe, "Contrato compartilhado com a MET-479"). Um caminho relativo
+    /// resolvido contra <c>Directory.GetCurrentDirectory()</c> (a primeira correção desta task)
+    /// quebrava porque os dois processos têm <c>cwd</c> DIFERENTE quando lançados exatamente como o
+    /// <c>README.md</c> documenta: <c>Microsoft.NET.Sdk.Web</c> (<c>src/Prumo.Api</c>) inicia o
+    /// processo com o diretório de trabalho já em <c>src/Prumo.Api</c> (default de
+    /// <c>RunWorkingDirectory</c> da SDK Web); <c>Microsoft.NET.Sdk</c> puro (<c>src/Prumo.Seed</c>)
+    /// herda o diretório de quem invocou o comando. Trocar <c>ContentRootPath</c>/<c>RunWorkingDirectory</c>
+    /// da API para a raiz do repo foi CONSIDERADO e DESCARTADO: quebra a leitura de
+    /// <c>appsettings.json</c> (que fica, corretamente, em <c>src/Prumo.Api/</c>, relativo a
+    /// <c>ContentRootPath</c>). Uma segunda correção (também descartada) resolvia contra a raiz do
+    /// repo calculada em COMPILAÇÃO via <see cref="System.Runtime.CompilerServices.CallerFilePathAttribute"/>
+    /// — funcionava para <c>dotnet run</c>/<c>dotnet test</c> comuns, mas com
+    /// <c>-p:ContinuousIntegrationBuild=true</c> (sugestão padrão de build determinístico/publish) o
+    /// compilador substitui o caminho real por um caminho-fonte MAPEADO e determinístico
+    /// (<c>/_/src/...</c>), e a conta resultava num caminho inexistente — armadilha real, medida ao
+    /// vivo, não hipotética.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Solução final:</b> o artefato vira CONTEÚDO DO BUILD (<c>&lt;Content Include&gt;</c> com
+    /// <c>Link</c> e <c>CopyToOutputDirectory=PreserveNewest</c> em <c>Prumo.Api.csproj</c> E
+    /// <c>Prumo.Seed.csproj</c> — ambos precisam da própria cópia, cada um no seu <c>bin/</c>), copiado
+    /// para a saída do build sob o MESMO caminho relativo que <c>Embeddings:PrecomputedPaths</c>
+    /// documenta. <see cref="AppContext.BaseDirectory"/> é o diretório do assembly em EXECUÇÃO — não
+    /// depende de <c>cwd</c>, não depende de caminho de compilação, funciona idêntico em
+    /// <c>dotnet run</c>, <c>dotnet test</c>, <c>dotnet publish</c> e build determinístico, e não
+    /// embute nenhum caminho de máquina no binário. Nenhuma convenção nova em <c>src/</c>: é o padrão
+    /// que todo projeto .NET usa para arquivo de dados versionado junto do código (mesmo mecanismo de
+    /// <c>appsettings.json</c>).
+    /// </para>
+    /// </summary>
+    private static string ResolveConfiguredPath(string path) =>
+        Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
 
     private static string BuildActionableMessage(string path, string reason) =>
         $"Artefato de vetores pré-computados '{path}' inválido: {reason}. Regenere com " +

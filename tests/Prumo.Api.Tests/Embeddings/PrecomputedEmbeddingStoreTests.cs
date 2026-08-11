@@ -126,6 +126,69 @@ public sealed class PrecomputedEmbeddingStoreTests : IDisposable
         Assert.Equal(MakeVector(0.9f), queryVector);
     }
 
+    /// <summary>
+    /// Achado do Reviewer (T9/MET-478, bloqueante): a correção do bug de resolução de caminho
+    /// relativo (<c>ResolveConfiguredPath</c> em <c>PrecomputedEmbeddingStore.cs</c>) tinha entrado
+    /// SEM teste — os 302 + 77 dos gates continuavam verdes com o bug de volta, porque TODOS os
+    /// outros testes desta classe usam caminho ABSOLUTO (<see cref="Path.GetTempPath"/>). Este teste
+    /// cobre o caminho RELATIVO explicitamente: um arquivo colocado sob
+    /// <see cref="AppContext.BaseDirectory"/> (a mesma âncora de <c>ResolveConfiguredPath</c> — nunca
+    /// <c>cwd</c>, nunca caminho de compilação) é encontrado a partir de um caminho RELATIVO puro,
+    /// com subdiretório, igual em forma ao que <c>Embeddings:PrecomputedPaths</c> documenta em
+    /// <c>.env.example</c> (<c>db/seed/embeddings/&lt;modelo&gt;.json</c>).
+    /// </summary>
+    [Fact]
+    public void Load_ResolvesRelativePath_AgainstAppContextBaseDirectory()
+    {
+        var relativeDirectory = $"prumo-relative-path-test-{Guid.NewGuid():N}";
+        var relativePath = Path.Combine(relativeDirectory, "artifact.json");
+        var absolutePath = Path.Combine(AppContext.BaseDirectory, relativePath);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        try
+        {
+            File.WriteAllText(
+                absolutePath,
+                JsonSerializer.Serialize(
+                    new ArtifactFixture(
+                        "openai:text-embedding-3-small@1024", EmbeddingDefaults.Dimensions, "sha256",
+                        [new VectorFixture("slug-1", "hash-1", MakeVector(0.1f))]),
+                    FixtureSerializerOptions));
+
+            var store = PrecomputedEmbeddingStore.Load([relativePath]);
+
+            Assert.True(store.TryGetVector("hash-1", out var vector));
+            Assert.Equal(MakeVector(0.1f), vector);
+        }
+        finally
+        {
+            Directory.Delete(Path.Combine(AppContext.BaseDirectory, relativeDirectory), recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Contrato complementar (achado do Reviewer, T9/MET-478): caminho ABSOLUTO passa intacto por
+    /// <c>ResolveConfiguredPath</c> — nada é prefixado com <see cref="AppContext.BaseDirectory"/>.
+    /// Todos os outros testes desta classe já dependem disso (<see cref="Path.GetTempPath"/>), mas
+    /// só este afirma o contrato de propósito, com a asserção explícita de que o caminho usado está
+    /// FORA de <see cref="AppContext.BaseDirectory"/>.
+    /// </summary>
+    [Fact]
+    public void Load_PassesAbsolutePathThroughUnchanged_RegardlessOfAppContextBaseDirectory()
+    {
+        var path = WriteArtifact(new ArtifactFixture(
+            "openai:text-embedding-3-small@1024", EmbeddingDefaults.Dimensions, "sha256",
+            [new VectorFixture("slug-1", "hash-1", MakeVector(0.1f))]));
+
+        Assert.True(Path.IsPathRooted(path));
+        Assert.False(path.StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase));
+
+        var store = PrecomputedEmbeddingStore.Load([path]);
+
+        Assert.True(store.TryGetVector("hash-1", out var vector));
+        Assert.Equal(MakeVector(0.1f), vector);
+    }
+
     [Fact]
     public void Load_ThrowsOnEmptyPathsList()
     {
