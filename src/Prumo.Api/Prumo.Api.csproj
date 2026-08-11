@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- TargetFramework/Nullable/ImplicitUsings vêm de Directory.Build.props (fonte única). -->
+
+  <ItemGroup>
+    <!--
+      Provider EF Core para PostgreSQL (ADR-001). Versão resolvida via NuGet no momento da task
+      (não de memória): 10.0.3 é a última estável compatível com net10.0, com dependência
+      declarada em Microsoft.EntityFrameworkCore[.Relational] [10.0.4, 11.0.0) e Npgsql 10.0.3
+      (mesma versão já usada em tests/Prumo.Api.Tests para os testes de integração).
+    -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!--
+      Binding pgvector para EF Core (MET-478 T3, design.md §3.2). Versões resolvidas via NuGet no
+      momento da task (não de memória) — as mais recentes publicadas em nuget.org:
+      Pgvector 0.3.2 e Pgvector.EntityFrameworkCore 0.3.0. O README oficial do pacote
+      (github.com/pgvector/pgvector-dotnet) confirma "the latest version works with Entity
+      Framework Core 9 and 10"; o nuspec de 0.3.0 declara dependência mínima em
+      Npgsql.EntityFrameworkCore.PostgreSQL >= 9.0.1, satisfeita pela 10.0.3 já usada acima.
+      Pgvector é referenciado explicitamente (e não só transitivamente) porque a entidade
+      Professional usa o tipo Pgvector.Vector diretamente.
+    -->
+    <PackageReference Include="Pgvector" Version="0.3.2" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Vetores pré-computados versionados em db/seed/embeddings/ (raiz do repo, fora do cone deste
+      projeto) — copiados para a saída do build sob o MESMO caminho relativo que
+      Embeddings:PrecomputedPaths documenta (design.md §5.3, .env.example), para que
+      PrecomputedEmbeddingStore resolva contra AppContext.BaseDirectory (achado do Reviewer,
+      T9/MET-478) em vez de cwd ou caminho de compilação — funciona idêntico em `dotnet run`,
+      `dotnet test`, `dotnet publish` e build determinístico (-p:ContinuousIntegrationBuild=true).
+      src/Prumo.Seed/Prumo.Seed.csproj tem o MESMO item — cada processo precisa da própria cópia no
+      seu bin/.
+    -->
+    <Content Include="..\..\db\seed\embeddings\*.json"
+             Link="db\seed\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Vetores pré-computados das consultas do golden set (eval/embeddings/, MET-479/T10) — MESMO
+      tratamento do artefato do corpus acima e pela mesma razão (comentário no item anterior):
+      Embeddings:PrecomputedPaths resolve os dois artefatos contra AppContext.BaseDirectory.
+    -->
+    <Content Include="..\..\eval\embeddings\*.json"
+             Link="eval\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

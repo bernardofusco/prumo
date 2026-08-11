@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework/Nullable/ImplicitUsings vêm de Directory.Build.props (fonte única). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Comando de ingestão (MET-478 T7, design.md §6, D6 da spec): console que referencia
+      src/Prumo.Api, onde já vivem PrumoDbContext e a abstração de embeddings — nada de schema ou
+      entidade duplicados aqui. O fallback do D6 (subcomando dentro da própria API) não foi
+      necessário: este ProjectReference para um projeto Sdk.Web a partir de um console NÃO atritou
+      com TreatWarningsAsErrors — Microsoft.Extensions.Hosting (Host.CreateApplicationBuilder) e
+      Microsoft.Extensions.Http (AddHttpClient, usado por EmbeddingProviderRegistration) chegam por
+      FrameworkReference transitiva de Microsoft.AspNetCore.App através deste ProjectReference;
+      nenhum PackageReference adicional foi preciso para elas.
+    -->
+    <ProjectReference Include="..\Prumo.Api\Prumo.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Mesmo item de src/Prumo.Api/Prumo.Api.csproj (ver comentário lá) — PrecomputedEmbeddingStore é
+      compartilhado (Prumo.Api.Embeddings) mas cada processo lê da PRÓPRIA saída de build
+      (AppContext.BaseDirectory), então os DOIS csproj precisam copiar o artefato para o bin/ deles.
+    -->
+    <Content Include="..\..\db\seed\embeddings\*.json"
+             Link="db\seed\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Vetores pré-computados das consultas do golden set (eval/embeddings/, MET-479/T10) — mesmo
+      motivo do item acima: este processo (ingestão) não lê este arquivo hoje, mas
+      Embeddings:PrecomputedPaths pode listar os dois artefatos independentemente do provider
+      configurado (PrecomputedEmbeddingStore.Load valida TODOS os caminhos recebidos), então a cópia
+      precisa existir aqui também para não quebrar o boot do Seed quando isso acontecer.
+    -->
+    <Content Include="..\..\eval\embeddings\*.json"
+             Link="eval\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

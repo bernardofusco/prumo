@@ -1,0 +1,150 @@
+{
+  "_note": "Dados FICTÍCIOS de demonstração. Nenhuma pessoa, empresa ou contato real.",
+  "specialties": [
+    {
+      "slug": "encanador",
+      "name": "Encanador",
+      "corpusSynonyms": [
+        "encanador",
+        "encanamento",
+        "hidráulic",
+        "cano",
+        "tubulação",
+        "desentup"
+      ]
+    },
+    {
+      "slug": "eletricista",
+      "name": "Eletricista",
+      "corpusSynonyms": [
+        "eletricista",
+        "elétric",
+        "fiação"
+      ]
+    },
+    {
+      "slug": "pintor",
+      "name": "Pintor",
+      "corpusSynonyms": [
+        "pintor",
+        "pintura",
+        "pintar"
+      ]
+    },
+    {
+      "slug": "diarista",
+      "name": "Diarista",
+      "corpusSynonyms": [
+        "diarista",
+        "faxina",
+        "limpeza"
+      ]
+    },
+    {
+      "slug": "jardineiro",
+      "name": "Jardineiro",
+      "corpusSynonyms": [
+        "jardineiro",
+        "jardinagem",
+        "jardim",
+        "poda",
+        "grama"
+      ]
+    },
+    {
+      "slug": "chaveiro",
+      "name": "Chaveiro",
+      "corpusSynonyms": [
+        "chaveiro",
+        "chave",
+        "fechadura"
+      ]
+    },
+    {
+      "slug": "marceneiro",
+      "name": "Marceneiro",
+      "corpusSynonyms": [
+        "marceneiro",
+        "marcenaria",
+        "madeira"
+      ]
+    },
+    {
+      "slug": "montador-de-moveis",
+      "name": "Montador de Móveis",
+      "corpusSynonyms": [
+        "montador",
+        "montagem",
+        "móveis"
+      ]
+    },
+    {
+      "slug": "tecnico-ar-condicionado",
+      "name": "Técnico em Ar-Condicionado",
+      "corpusSynonyms": [
+        "ar-condicionado",
+        "ar condicionado",
+        "climatiz",
+        "refrigera",
+        "split"
+      ]
+    },
+    {
+      "slug": "personal-trainer",
+      "name": "Personal Trainer",
+      "corpusSynonyms": [
+        "personal trainer",
+        "personal",
+        "treino"
+      ]
+    },
+    {
+      "slug": "professor-particular",
+      "name": "Professor Particular",
+      "corpusSynonyms": [
+        "professor",
+        "aula particular",
+        "reforço escolar"
+      ]
+    },
+    {
+      "slug": "cabeleireiro",
+      "name": "Cabeleireiro",
+      "corpusSynonyms": [
+        "cabeleireiro",
+        "cabelo",
+        "corte de cabelo"
+      ]
+    },
+    {
+      "slug": "manicure",
+      "name": "Manicure",
+      "corpusSynonyms": [
+        "manicure",
+        "unha",
+        "esmalte",
+        "cutic",
+        "cutil",
+        "pedicure"
+      ]
+    },
+    {
+      "slug": "dedetizador",
+      "name": "Dedetizador",
+      "corpusSynonyms": [
+        "dedetizador",
+        "dedetização",
+        "praga"
+      ]
+    },
+    {
+      "slug": "vidraceiro",
+      "name": "Vidraceiro",
+      "corpusSynonyms": [
+        "vidraceiro",
+        "vidraçaria",
+        "vidro"
+      ]
+    }
+  ]
+}

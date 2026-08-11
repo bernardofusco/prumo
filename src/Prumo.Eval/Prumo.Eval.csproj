@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework/Nullable/ImplicitUsings vêm de Directory.Build.props (fonte única). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Comando de regeneração de eval/embeddings/<modelo>.json (MET-479 T10 — achado do Reviewer:
+      DoD exigia "o comando que regenera" e só havia prosa). MESMO padrão de src/Prumo.Seed:
+      ProjectReference para src/Prumo.Api, onde já vivem EmbeddingDocument, IEmbeddingProvider e
+      EmbeddingProviderRegistration — nada de schema, HTTP client ou hash reimplementados aqui.
+      Nenhum PackageReference novo (Microsoft.Extensions.Hosting chega por FrameworkReference
+      transitiva, mesma nota de src/Prumo.Seed/Prumo.Seed.csproj).
+    -->
+    <ProjectReference Include="..\Prumo.Api\Prumo.Api.csproj" />
+  </ItemGroup>
+
+</Project>
