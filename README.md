@@ -28,12 +28,15 @@ prumo/
 ├── Directory.Build.props   # net10.0, Nullable, TreatWarningsAsErrors, EnforceCodeStyleInBuild
 ├── .editorconfig           # fonte da verdade do `dotnet format`
 ├── .gitattributes          # normaliza EOL (LF) independente do SO de quem clona
-├── src/Prumo.Api/          # Minimal API (.NET 10): GET /api/health, GET /api/health/db
+├── src/Prumo.Api/          # Minimal API (.NET 10): health, GET /api/search(/options) (M1)
 ├── src/Prumo.Seed/         # Console de ingestão (M1): popula specialties/professionals + embeddings
-├── tests/Prumo.Api.Tests/  # xUnit; Category=Integration usa Testcontainers
-├── frontend/               # React + TypeScript (Vite) + Vitest — indicador de status da API
+├── src/Prumo.Eval/         # Console que gera eval/embeddings/<modelo>.json (vetores das consultas do golden set)
+├── tests/Prumo.Api.Tests/  # xUnit; Category=Integration usa Testcontainers; Eval/ mede o golden set
+├── frontend/               # React + TypeScript (Vite) + Vitest — status da API + tela de busca híbrida
 ├── db/migrations/          # SQL forward-only — as constraints são parte da história
 ├── db/seed/                # Corpus de demonstração 100% fictício (specialties.json, professionals.json)
+├── db/seed/embeddings/     # Vetores REAIS pré-computados do corpus (versionado, ver "Sem provedor…")
+├── eval/                   # A régua do M1: golden-set.json, embeddings/ das consultas, README.md
 ├── compose.yaml            # Postgres + pgvector (+ cube/earthdistance) para dev local
 ├── .env.example            # nomes de variáveis (nunca valores reais)
 └── .github/workflows/ci.yml  # CI (espelha os gates do harness)
@@ -63,8 +66,11 @@ prumo/
 > (repo do harness, 2026-08-11), um piso `L2 = 0,40`** — derivado mecanicamente do valor medido no
 > único ponto elegível a L1/L3 pela mesma regra de arredondamento que a spec já declarava — e os pesos
 > que a regra de escolha da spec já apontava (`SemanticWeight = 0,9`, `ProximityWeight = 0,1`,
-> `DistanceDecayKm = 5`), agora gravados em `appsettings.json`. **A régua do M1 fecha**: L1, L2
-> (revisado), L3 e L4 satisfeitos. Buscar por uma das 150 descrições literais do
+> `DistanceDecayKm = 5`), agora gravados em `appsettings.json` **e registrados como fato** no corpo de
+> `project/adr/ADR-003-formula-do-ranking-hibrido.md` (repo do harness) — que **permanece `Proposed`**:
+> a promoção formal a `Accepted` é decisão do dono, ainda não tomada (a ADR-005 é explícita em não a
+> tomar em nome dele). **A régua do M1 fecha**: L1, L2 (revisado), L3 e L4 satisfeitos. Buscar por uma
+> das 150 descrições literais do
 > corpus, ou por qualquer uma das ~20 consultas do golden set, funciona com vetor semântico real;
 > texto livre arbitrário fora dessa lista responde `422` (ver seção
 > "Busca" → "Sem provedor de embeddings configurado"). O agendamento sob concorrência é o M2. Este
@@ -305,6 +311,37 @@ pela regra de escolha (`w_s = 0,9`, `τ = 5`) via `project/adr/ADR-005-piso-l2-b
 (repo do harness, 2026-08-11) — **a régua do M1 fecha** com esses valores gravados em
 `appsettings.json`. A tabela completa (18 pontos, só-semântica vs. híbrido), o racional da mudança de
 piso e as mitigações contra sobreajuste estão em `eval/README.md`, "Grid de calibração e limiares".
+
+**Só-semântica vs. híbrido vs. baseline lexical** — o resumo que sustenta a tese do case (tabela
+completa dos 18 pontos, com todos os `τ`, em `eval/README.md`). As linhas "só-semântica" e "híbrido"
+vêm da mesma suíte (`GoldenSetEvalTests`, `Category=Integration`) contra Postgres+pgvector real
+(Testcontainers), vetores `qwen3-embedding-0.6b`, verificadas nesta T12 rodando o teste de novo (não
+copiadas de outro documento). A linha "baseline lexical" vem de um instrumento diferente —
+`tests/Prumo.Api.Tests/Eval/LexicalBaseline.cs`, determinístico, sem banco e sem vetor (o análogo
+direto de `WHERE description ILIKE '%palavra%'` somado por termo) — recalculada de forma independente
+nesta T12 e conferida contra o número já publicado em `eval/README.md`; `meanPrecision@5` e ordem não
+se aplicam a esse instrumento (colunas marcadas abaixo):
+
+| Ranking | `hitRate@3` | `meanPrecision@5` | ordem (`expectedRankedAbove`) | fecha L1 + L3? |
+|---|---:|---:|---:|---|
+| Baseline lexical (`LIKE '%palavra%'`, referência — sem vetor, `LexicalBaseline.cs`) | 0,60 (12/20) | não avaliado por esta métrica | não avaliado | não é candidato ao ranking |
+| Só-semântica (`w_s = 1,0`, `w_p = 0`, qualquer `τ`) | 1,00 | 0,41 | 1/2 | **não** — falha L3 |
+| **Híbrido — adotado** (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`) | **1,00** | **0,41** | **2/2** | **sim** |
+
+A diferença entre só-semântica e híbrido não aparece em `hitRate@3` (as duas acertam 100% das
+consultas) nem em `meanPrecision@5` (empatadas em 0,41) — aparece na **ordem**: sem proximidade no
+score, os dois pares `expectedRankedAbove` do golden set (`gs-16`, `gs-17`) não têm como ser
+desempatados por distância, e a busca só-semântica reprova L3. É por isso que o ranking v1 é híbrido,
+mesmo com um peso de proximidade pequeno (0,1): o suficiente para resolver a ordem sem alterar quantas
+buscas acertam a especialidade certa. Contra a busca semântica (híbrida ou só-semântica), o baseline
+lexical erra 8 das 20 consultas no top-3 — é a folga que prova que o golden set não está apenas
+premiando quem repete a palavra da consulta.
+
+`meanPrecision@5` (o quão "limpo" é o top-5 inteiro) tem piso próprio, revisado de 0,70 para 0,40
+(ADR-005) — não porque o ranking piorou, mas porque a composição do corpus (15 especialidades de
+vocabulário de "serviço doméstico" próximo entre si) tem um teto medido de ≈ 0,61 mesmo no melhor caso
+possível (leave-one-out sobre as 150 descrições reais do corpus); ver `eval/README.md`, "Piso `L2`
+baixado de 0,70 para 0,40", para a medição completa e o racional.
 
 ### Testes e gates
 
