@@ -109,7 +109,11 @@ public sealed class EmbeddingsArtifactReproducibilityTests
 
             if (similarity < MinimumCosineSimilarity)
             {
-                mismatches.Add($"{slug}: cos={similarity:F4} (esperado >= {MinimumCosineSimilarity:F3})");
+                // InvariantCulture pela mesma razão que GoldenSetEvalTests.Fmt: número de medição
+                // relatado em pt-BR sairia com vírgula decimal e não colaria em relatório nem em
+                // issue sem reformatar à mão.
+                mismatches.Add(FormattableString.Invariant(
+                    $"{slug}: cos={similarity:F4} (esperado >= {MinimumCosineSimilarity:F3})"));
             }
         }
 

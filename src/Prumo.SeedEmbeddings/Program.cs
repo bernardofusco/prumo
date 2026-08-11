@@ -187,10 +187,30 @@ public static class SeedEmbeddingsProgram
     private static string ResolvePath(string? configuredValue, string defaultValue) =>
         string.IsNullOrWhiteSpace(configuredValue) ? defaultValue : configuredValue;
 
-    private static int ResolveEmbeddingBatchSize(string? configuredValue) =>
-        int.TryParse(configuredValue, out var parsed) && parsed > 0
-            ? parsed
-            : SeedRunnerOptions.DefaultEmbeddingBatchSize;
+    /// <summary>
+    /// Valor inválido cai no default, mas <b>avisando</b>: a saída deste comando é a régua do case,
+    /// e cair em default silenciosamente num processo cujo artefato vira medição é o tipo de coisa
+    /// que só se descobre depois. O tamanho do lote não altera o vetor (medido e refutado na
+    /// ADR-006), então avisar basta — não é caso de derrubar o processo.
+    /// </summary>
+    private static int ResolveEmbeddingBatchSize(string? configuredValue)
+    {
+        if (string.IsNullOrWhiteSpace(configuredValue))
+        {
+            return SeedRunnerOptions.DefaultEmbeddingBatchSize;
+        }
+
+        if (int.TryParse(configuredValue, out var parsed) && parsed > 0)
+        {
+            return parsed;
+        }
+
+        Console.Error.WriteLine(
+            $"AVISO: SeedEmbeddings:EmbeddingBatchSize='{configuredValue}' nao e um inteiro positivo; "
+                + $"usando o default {SeedRunnerOptions.DefaultEmbeddingBatchSize}.");
+
+        return SeedRunnerOptions.DefaultEmbeddingBatchSize;
+    }
 
     private static void WriteArtifact(
         string outputPath,

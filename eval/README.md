@@ -563,7 +563,9 @@ inclusive as 5 que falhavam antes (`gs-05`, `gs-07` revisada, `gs-09`, `gs-14`, 
 ao menos um profissional relevante no top-3. **Isto confirma a hipótese 1 da medição anterior**: o
 modelo era, de fato, a causa da falha de L1.
 
-Mas `meanPrecision@5` não se moveu na mesma proporção: **0,39–0,41 com `qwen3-embedding-0.6b`**,
+Mas `meanPrecision@5` não se moveu na mesma proporção: **0,39–0,41 com `qwen3-embedding-0.6b`**
+*(números da medição de 2026-08-11, antes da ADR-006; com o artefato corrigido o intervalo é
+0,40–0,42 — a faixa de 0,02 entre os 18 pontos, que é o argumento aqui, não muda)*,
 praticamente o MESMO intervalo medido com `bge-m3` (0,39–0,42), apesar de `hitRate@3` ter subido ~25
 pontos percentuais. Inspeção direta (consulta SQL `<=>` contra o banco real, fora do teste, para não
 alterar a régua) em cinco consultas sem localização confirma o padrão: o profissional relevante
@@ -637,7 +639,8 @@ especialidade esperada, independentemente de qual dos dois modelos gerou os veto
    fórmula do ranking.
 3. **A fórmula — descartada de novo, com evidência mais forte que na medição anterior.** O ponto mais
    favorável do grid para `meanPrecision@5` (0,41, no único ponto elegível) mal se move em relação ao
-   pior (0,39) — uma faixa de 0,02 entre os 18 pontos, contra um piso que exige subir 0,29. Nenhuma
+   pior (0,39) — uma faixa de 0,02 entre os 18 pontos, contra um piso que exige subir 0,29. *(Valores
+   de 2026-08-11, antes da ADR-006; hoje são 0,42 e 0,40, e a faixa de 0,02 é a mesma.)* Nenhuma
    combinação de peso e `τ` resolve um problema que está na composição do corpus, não na combinação
    dos dois fatores.
 
@@ -772,8 +775,9 @@ repo do harness, 2026-08-11): ratificar `L2 = 0,40` — derivado mecanicamente d
 ponto elegível pela mesma regra de arredondamento que a spec já declarava — e adotar os pesos que a
 regra de escolha já apontava (`w_s = 0,9`, `w_p = 0,1`, `τ = 5`). `appsettings.json:Ranking` foi
 atualizado com esses valores; `GoldenSetEvalTests.L2Threshold` foi atualizado para 0,40, com comentário
-citando a ADR-005. Corpus, golden set, L1, L3 e o grid de 18 pontos permaneceram exatamente como
-estavam — nada disso foi tocado por essa decisão.
+citando a ADR-005. Corpus, golden set, artefatos, L1, L3 e o grid de 18 pontos permaneceram exatamente
+como estavam — nada disso foi tocado por essa decisão. *(Os artefatos só viriam a mudar depois, pela
+ADR-006, e por outro motivo: 3 vetores irreproduzíveis.)*
 
 **Vetores do corpus corrigidos (2026-08-11, MET-528, `project/adr/ADR-006-artefato-do-corpus-regenerado-para-ser-reproduzivel.md`
 no repo do harness).** 3 dos 150 vetores do artefato do corpus se revelaram irreprodutíveis pelo
