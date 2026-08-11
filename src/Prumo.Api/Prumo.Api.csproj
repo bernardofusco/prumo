@@ -24,4 +24,20 @@
     <PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      Vetores pré-computados versionados em db/seed/embeddings/ (raiz do repo, fora do cone deste
+      projeto) — copiados para a saída do build sob o MESMO caminho relativo que
+      Embeddings:PrecomputedPaths documenta (design.md §5.3, .env.example), para que
+      PrecomputedEmbeddingStore resolva contra AppContext.BaseDirectory (achado do Reviewer,
+      T9/MET-478) em vez de cwd ou caminho de compilação — funciona idêntico em `dotnet run`,
+      `dotnet test`, `dotnet publish` e build determinístico (-p:ContinuousIntegrationBuild=true).
+      src/Prumo.Seed/Prumo.Seed.csproj tem o MESMO item — cada processo precisa da própria cópia no
+      seu bin/.
+    -->
+    <Content Include="..\..\db\seed\embeddings\*.json"
+             Link="db\seed\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

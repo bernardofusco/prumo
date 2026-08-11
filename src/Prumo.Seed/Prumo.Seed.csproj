@@ -19,4 +19,15 @@
     <ProjectReference Include="..\Prumo.Api\Prumo.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      Mesmo item de src/Prumo.Api/Prumo.Api.csproj (ver comentário lá) — PrecomputedEmbeddingStore é
+      compartilhado (Prumo.Api.Embeddings) mas cada processo lê da PRÓPRIA saída de build
+      (AppContext.BaseDirectory), então os DOIS csproj precisam copiar o artefato para o bin/ deles.
+    -->
+    <Content Include="..\..\db\seed\embeddings\*.json"
+             Link="db\seed\embeddings\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
