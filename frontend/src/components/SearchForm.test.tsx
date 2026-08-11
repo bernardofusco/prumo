@@ -15,6 +15,7 @@ function renderForm(overrides: Partial<Parameters<typeof SearchForm>[0]> = {}) {
     onExampleQueryClick: vi.fn(),
     onSubmit: vi.fn(),
     isSubmitting: false,
+    maxQueryLength: null,
     ...overrides,
   }
   render(<SearchForm {...props} />)
@@ -96,5 +97,65 @@ describe('SearchForm', () => {
 
     expect(screen.getByRole('button', { name: 'Usar minha localização' })).toBeDefined()
     expect(screen.getByLabelText('Cidade')).toBeDefined()
+  })
+
+  // ---- MET-516: limite máximo de caracteres, ecoado por GET /api/search/options ------------------
+
+  it('sem maxQueryLength (opções ainda não chegaram): campo sem maxLength e sem contador', () => {
+    renderForm({ maxQueryLength: null, query: 'a'.repeat(50) })
+
+    const input = screen.getByLabelText<HTMLInputElement>('O que você precisa?')
+    expect(input.hasAttribute('maxlength')).toBe(false)
+    expect(screen.queryByText(/caractere/)).toBeNull()
+  })
+
+  it('aplica maxLength no campo — o navegador nunca deixa digitar além do limite do servidor', () => {
+    renderForm({ maxQueryLength: 200 })
+
+    const input = screen.getByLabelText<HTMLInputElement>('O que você precisa?')
+    expect(input.maxLength).toBe(200)
+  })
+
+  it('longe do limite: nenhum contador aparece (discreto de verdade)', () => {
+    renderForm({ maxQueryLength: 200, query: 'vazamento no banheiro' })
+
+    expect(screen.queryByText(/caractere/)).toBeNull()
+  })
+
+  it('perto do limite: contador aparece com a contagem restante', () => {
+    renderForm({ maxQueryLength: 200, query: 'a'.repeat(185) })
+
+    expect(screen.getByText('Faltam 15 caracteres para o limite da busca.')).toBeDefined()
+  })
+
+  it('a 1 caractere do limite: mensagem no singular', () => {
+    renderForm({ maxQueryLength: 200, query: 'a'.repeat(199) })
+
+    expect(screen.getByText('Falta 1 caractere para o limite da busca.')).toBeDefined()
+  })
+
+  it('no limite exato: mensagem de limite atingido, não "Faltam 0"', () => {
+    renderForm({ maxQueryLength: 200, query: 'a'.repeat(200) })
+
+    expect(screen.getByText('Você atingiu o limite de caracteres da busca.')).toBeDefined()
+  })
+
+  it('contador liga aria-describedby do campo ao seu próprio id', () => {
+    renderForm({ maxQueryLength: 200, query: 'a'.repeat(195) })
+
+    const input = screen.getByLabelText('O que você precisa?')
+    const hint = screen.getByText('Faltam 5 caracteres para o limite da busca.')
+
+    expect(input.getAttribute('aria-describedby')).toBe(hint.id)
+  })
+
+  it('erro do campo E contador juntos: aria-describedby lista os dois ids', () => {
+    renderForm({ maxQueryLength: 200, query: 'a'.repeat(195), fieldError: 'Erro qualquer.' })
+
+    const input = screen.getByLabelText('O que você precisa?')
+    const error = screen.getByRole('alert')
+    const hint = screen.getByText('Faltam 5 caracteres para o limite da busca.')
+
+    expect(input.getAttribute('aria-describedby')).toBe(`${error.id} ${hint.id}`)
   })
 })

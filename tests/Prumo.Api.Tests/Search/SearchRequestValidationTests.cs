@@ -183,6 +183,16 @@ public sealed class SearchRequestValidationTests(WebApplicationFactory<Program> 
     /// <c>problem+json</c> de fato, mas violando "sem stack trace" mesmo assim. Mesma asserção para
     /// <c>lat</c>/<c>lng</c>/<c>radiusKm</c> não numéricos — os cinco parâmetros passam pelo MESMO
     /// binder de tipo simples.
+    ///
+    /// <para>
+    /// <b>MET-526:</b> o binder do Minimal API NUNCA mais entra em jogo para estes quatro parâmetros
+    /// — <c>SearchEndpoints.HandleSearchAsync</c> os recebe como <c>string?</c> e é
+    /// <see cref="Prumo.Api.Search.SearchRequestValidator"/> (via reflexão, é <c>internal</c>) quem
+    /// tenta o <c>TryParse</c> e escreve a mensagem de 400 diretamente — nunca mais o texto genérico
+    /// de fallback de <c>SearchEndpoints.ConfigureProblemDetails</c>. As asserções abaixo continuam
+    /// valendo (nenhum stack trace, nenhum tipo .NET cru), mas agora por construção do próprio
+    /// validador, não por um filtro que limpa o que o framework devolveu.
+    /// </para>
     /// </summary>
     [Theory]
     [InlineData("limit=abc")]
@@ -201,6 +211,63 @@ public sealed class SearchRequestValidationTests(WebApplicationFactory<Program> 
         Assert.DoesNotContain("BadHttpRequestException", body, StringComparison.Ordinal);
         Assert.DoesNotContain("StackTrace", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(" at ", body, StringComparison.Ordinal); // frame de stack trace (" at Namespace.Type.Method")
+    }
+
+    /// <summary>
+    /// MET-526, o repro literal da issue: <c>radiusKm=0.1</c> — um raio fracionário, inatingível pela
+    /// UI (o slider só emite inteiro) mas alcançável por qualquer cliente HTTP direto contra a API
+    /// pública do case. Antes da correção, isto era falha de BINDING do Minimal API para
+    /// <c>int? radiusKm</c>, fora do alcance do validador. <c>12.5</c> prova que a regra vale para
+    /// qualquer fracionário, não só o valor exato do repro.
+    /// </summary>
+    [Theory]
+    [InlineData("0.1")]
+    [InlineData("12.5")]
+    public async Task GetSearch_WithFractionalRadiusKm_Returns400InvalidRequest_RejectedNotRounded(string fractionalRadiusKm)
+    {
+        var body = await AssertInvalidRequestAsync(
+            $"/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=-43.9352&radiusKm={fractionalRadiusKm}");
+
+        using var document = JsonDocument.Parse(body);
+        var detail = document.RootElement.GetProperty("detail").GetString();
+
+        // "Rejeitado, não arredondado" (ver XML-doc de SearchRequestValidator, "Fracionário em
+        // radiusKm"): a mensagem precisa dizer que o raio tem que ser inteiro — não silenciar o
+        // fracionário arredondando para 1 km ou para baixo por trás das costas do cliente.
+        Assert.Contains("inteiro", detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// MET-516 (b): nenhuma mensagem de 400 desta rota pode citar o NOME HTTP do parâmetro entre
+    /// aspas simples (<c>'q'</c>, <c>'lat'</c>, <c>'lng'</c>, <c>'radiusKm'</c>, <c>'limit'</c>) — um
+    /// usuário lendo "O parâmetro 'q' é obrigatório" não sabe o que é <c>q</c>; a mensagem tem que
+    /// falar da BUSCA, da LATITUDE/LONGITUDE, do RAIO, da QUANTIDADE DE RESULTADOS. Cobre as sete
+    /// regras de 400 que citavam um nome técnico antes desta correção — regressão de vazamento de
+    /// nome de implementação, não achado novo de comportamento (todas já eram 400 antes e depois).
+    /// </summary>
+    [Theory]
+    [InlineData("/api/search")] // q ausente
+    [InlineData("/api/search?q=t")] // q curto demais
+    [InlineData("/api/search?q=vazamento+no+banheiro&lat=-19.9245")] // lat sem lng
+    [InlineData("/api/search?q=vazamento+no+banheiro&lat=abc&lng=-43.9352")] // lat não numérico
+    [InlineData("/api/search?q=vazamento+no+banheiro&lat=91&lng=-43.9352")] // lat fora de faixa
+    [InlineData("/api/search?q=vazamento+no+banheiro&radiusKm=10")] // radiusKm sem localização
+    [InlineData("/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=-43.9352&radiusKm=0.1")] // radiusKm fracionário
+    [InlineData("/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=-43.9352&radiusKm=0")] // radiusKm fora de faixa
+    [InlineData("/api/search?q=vazamento+no+banheiro&limit=abc")] // limit não numérico
+    [InlineData("/api/search?q=vazamento+no+banheiro&limit=0")] // limit fora de faixa
+    public async Task GetSearch_WithAnyInvalidRequest_NeverLeaksTheHttpParameterNameInTheMessage(string requestUri)
+    {
+        var body = await AssertInvalidRequestAsync(requestUri);
+
+        using var document = JsonDocument.Parse(body);
+        var detail = document.RootElement.GetProperty("detail").GetString();
+
+        Assert.DoesNotContain("'q'", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("'lat'", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("'lng'", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("'radiusKm'", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("'limit'", detail, StringComparison.Ordinal);
     }
 
     // A prova positiva ("parâmetros válidos NÃO caem em 400") mora em

@@ -64,6 +64,15 @@ select:focus-visible {
   color: var(--notice-error-text, #b3261e);
 }
 
+/* Contador discreto de caracteres (MET-516) — some junto com o resto do texto de apoio; menor e
+   mais claro que o erro do campo, de propósito, para não competir com ele quando os dois aparecem
+   juntos perto do limite. */
+.search-form__length-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  opacity: 0.75;
+}
+
 .search-form > button[type='submit'] {
   align-self: flex-start;
 }

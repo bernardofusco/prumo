@@ -53,9 +53,8 @@ public static class SearchEndpoints
     /// Passada para <c>services.AddProblemDetails(SearchEndpoints.ConfigureProblemDetails)</c> em
     /// <c>Program.cs</c> (achado do review da T6, item 3): garante <c>application/problem+json</c>
     /// com <c>code: invalid_request</c> mesmo para falhas de BINDING de parâmetro que o próprio
-    /// Minimal API produz (ex.: <c>limit=abc</c> falhando ao vincular a <c>int?</c>) — antes,
-    /// <c>Program.cs</c> não chamava <c>AddProblemDetails()</c> e essas falhas viravam
-    /// <c>text/plain</c> com o nome de um tipo .NET no corpo.
+    /// Minimal API produz — antes, <c>Program.cs</c> não chamava <c>AddProblemDetails()</c> e essas
+    /// falhas viravam <c>text/plain</c> com o nome de um tipo .NET no corpo.
     ///
     /// <para>
     /// <b>Segunda correção, achada só ao testar com <c>curl</c> contra o processo real:</b> em
@@ -67,6 +66,17 @@ public static class SearchEndpoints
     /// o Postgres). Removida INCONDICIONALMENTE — antes de qualquer verificação de status, nunca
     /// depois — porque a garantia da spec ("sem stack trace") não pode depender nem de uma flag de
     /// ambiente nem do código de status da resposta.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>MET-526:</b> <c>q</c>, <c>lat</c>, <c>lng</c>, <c>radiusKm</c> e <c>limit</c> chegam ao
+    /// handler como <c>string?</c> — <see cref="SearchRequestValidator"/> é quem faz TODA a conversão
+    /// numérica agora, produzindo uma mensagem específica em pt-BR para cada parâmetro (nunca o nome
+    /// HTTP dele — MET-516). O ramo <c>looksLikeAFrameworkBindingFailure</c> abaixo deixa de ser
+    /// alcançável pelos parâmetros desta rota (nenhum deles força mais o Minimal API a tentar um
+    /// <c>TryParse</c> antes do handler rodar) — mantido só como defesa genérica para um parâmetro
+    /// futuro que volte a usar um tipo primitivo, para que essa classe de falha nunca volte a produzir
+    /// um corpo vazio nem um tipo .NET cru, mesmo se reintroduzida por acidente.
     /// </para>
     /// </summary>
     public static void ConfigureProblemDetails(ProblemDetailsOptions options)
@@ -92,10 +102,11 @@ public static class SearchEndpoints
                 context.ProblemDetails.Extensions["code"] = "invalid_request";
             }
 
-            // Falha de binding do próprio Minimal API (ex.: "limit=abc"): título/detalhe genéricos do
-            // framework, em inglês e citando um tipo .NET — trocados por uma mensagem consistente com
-            // as demais 400 desta API (SearchRequestValidator), em pt-BR, sem nomear o parâmetro
-            // problemático em termos de implementação.
+            // Falha de binding do próprio Minimal API: título/detalhe genéricos do framework, em
+            // inglês e citando um tipo .NET — trocados por uma mensagem consistente com as demais 400
+            // desta API (SearchRequestValidator), em pt-BR, sem nomear o parâmetro problemático em
+            // termos de implementação. Ver XML-doc da classe (MET-526): defesa genérica, não mais o
+            // caminho esperado para q/lat/lng/radiusKm/limit.
             var looksLikeAFrameworkBindingFailure =
                 string.Equals(context.ProblemDetails.Title, "Microsoft.AspNetCore.Http.BadHttpRequestException", StringComparison.Ordinal)
                 || (context.ProblemDetails.Detail?.Contains("Failed to bind parameter", StringComparison.Ordinal) ?? false);
@@ -110,10 +121,13 @@ public static class SearchEndpoints
 
     private static async Task<IResult> HandleSearchAsync(
         string? q,
-        double? lat,
-        double? lng,
-        int? radiusKm,
-        int? limit,
+        // lat/lng/radiusKm/limit chegam como string — nunca double?/int? (MET-526, XML-doc de
+        // SearchRequestValidator.Validate para o porquê: o Minimal API falha o BINDING de um valor
+        // primitivo malformado ANTES do handler rodar, fora do controle desta classe).
+        string? lat,
+        string? lng,
+        string? radiusKm,
+        string? limit,
         IProfessionalSearchQuery searchQuery,
         ISearchQueryEmbedder embedder,
         PrecomputedEmbeddingStore precomputedStore,
@@ -290,6 +304,7 @@ public static class SearchEndpoints
         return TypedResults.Ok(new SearchOptionsResponse(
             EmbeddingMode: MapConfiguredProviderNameToEmbeddingMode(configuredProviderName),
             DefaultResultLimit: searchOptions.DefaultResultLimit,
+            MaxQueryLength: searchOptions.MaxQueryLength,
             ExampleQueries: BuildExampleQueries(precomputedStore, searchOptions),
             Cities: cities));
     }
@@ -412,6 +427,34 @@ public static class SearchEndpoints
 /// Regras de <c>GET /api/search</c> (spec.md "Contrato API ↔ Frontend"), aplicadas TODAS antes de
 /// qualquer I/O — nenhuma delas toca banco nem provedor de embeddings, por isso é testável só com
 /// <c>WebApplicationFactory</c> em memória (mesmo caminho de <c>HealthEndpointTests</c> do M0).
+///
+/// <para>
+/// <b>MET-526 — <c>lat</c>/<c>lng</c>/<c>radiusKm</c>/<c>limit</c> chegam como <c>string?</c>, nunca
+/// <c>double?</c>/<c>int?</c>.</b> Achado ao testar com <c>curl</c> contra o processo real:
+/// <c>GET /api/search?...&amp;radiusKm=0.1</c> (um raio fracionário — inatingível pela UI, cujo
+/// slider só emite inteiro, mas alcançável por qualquer cliente HTTP direto, a API pública do case)
+/// falhava o BINDING do Minimal API para <c>int? radiusKm</c> ANTES deste validador — ou de qualquer
+/// outro código desta classe — rodar. O Minimal API não distingue "0.1 é claramente uma medida em
+/// quilômetros que só não é um número inteiro" de "abc não é um número" — os dois viram a MESMA falha
+/// de binding genérica, resolvida só por <see cref="SearchEndpoints.ConfigureProblemDetails"/> (um
+/// texto de fallback ÚNICO, sem dizer qual parâmetro nem por quê). Tipar os cinco parâmetros do
+/// handler como <c>string?</c> — inclusive <c>q</c>, que já era — move TODA a conversão numérica para
+/// dentro deste validador, o único lugar que já sabia escrever uma mensagem específica em pt-BR por
+/// regra.
+/// </para>
+///
+/// <para>
+/// <b>Fracionário em <c>radiusKm</c>: rejeitado, não arredondado.</b> Decisão deliberada (não a única
+/// defensável): o contrato já trata raio como inteiro em toda parte — <c>SearchGeoInfo.RadiusKm</c>
+/// (o eco na resposta) é <c>int?</c>, os limites <see cref="MinRadiusKm"/>/<see cref="MaxRadiusKm"/>
+/// já eram inteiros, e a UI (o slider) nunca emite outra coisa. Arredondar silenciosamente um valor
+/// que o cliente escreveu por extenso (<c>0.1</c>) trocaria o que ele pediu pelo que a API decidiu
+/// entender, sem avisar — o oposto do "contrato mais previsível": quem manda <c>radiusKm=0.1</c>
+/// recebe uma mensagem dizendo exatamente isso, no mesmo formato das outras 400 desta rota, e decide
+/// se quer mandar <c>1</c> (mínimo) ou outro inteiro. <c>int.TryParse</c> com
+/// <see cref="NumberStyles.Integer"/> já rejeita qualquer texto com ponto decimal — nenhuma checagem
+/// extra precisa existir só para separar "0.1" de "abc": os dois caem na mesma mensagem de formato.
+/// </para>
 /// </summary>
 internal static class SearchRequestValidator
 {
@@ -423,14 +466,14 @@ internal static class SearchRequestValidator
     private const int MaxRadiusKm = 200;
 
     public static SearchRequestValidationResult Validate(
-        string? q, double? lat, double? lng, int? radiusKm, int? limit, SearchOptions options)
+        string? q, string? lat, string? lng, string? radiusKm, string? limit, SearchOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         if (string.IsNullOrWhiteSpace(q))
         {
             return SearchRequestValidationResult.Invalid(
-                "O parâmetro 'q' é obrigatório e não pode ser vazio nem conter só espaços.");
+                "A busca é obrigatória e não pode ficar vazia nem conter só espaços.");
         }
 
         var trimmedQuery = q.Trim();
@@ -441,78 +484,140 @@ internal static class SearchRequestValidator
         if (trimmedQuery.Length < options.MinQueryLength)
         {
             return SearchRequestValidationResult.Invalid(
-                $"O parâmetro 'q' precisa ter ao menos {options.MinQueryLength} caracteres após remover " +
+                $"O texto da busca precisa ter ao menos {options.MinQueryLength} caracteres após remover " +
                 $"espaços das pontas (recebeu {trimmedQuery.Length}).");
         }
 
         if (trimmedQuery.Length > options.MaxQueryLength)
         {
             return SearchRequestValidationResult.Invalid(
-                $"O parâmetro 'q' excede o tamanho máximo de {options.MaxQueryLength} caracteres " +
+                $"O texto da busca não pode passar de {options.MaxQueryLength} caracteres " +
                 $"(recebeu {trimmedQuery.Length}).");
         }
 
-        if (lat.HasValue != lng.HasValue)
+        // "Informado" = a chave apareceu na query string, mesmo vazia (`lat=`) — tratada como um
+        // valor malformado abaixo (TryParseDouble("") falha), não como "ausente": um cliente que
+        // manda a chave sem valor quase sempre tem um bug de montagem de URL, e silenciar isso como
+        // "sem localização" esconderia esse bug em vez de apontá-lo.
+        var latProvided = lat is not null;
+        var lngProvided = lng is not null;
+
+        if (latProvided != lngProvided)
         {
             return SearchRequestValidationResult.Invalid(
-                "Os parâmetros 'lat' e 'lng' precisam ser informados juntos: um não pode faltar quando " +
-                "o outro está presente.");
+                "A latitude e a longitude precisam ser informadas juntas: uma não pode faltar quando " +
+                "a outra está presente.");
         }
 
         SearchLocation? location = null;
 
-        if (lat.HasValue && lng.HasValue)
+        // `lat is not null && lng is not null` (não `latProvided && lngProvided`): equivalente em
+        // valor a esta altura (a checagem acima já garantiu `latProvided == lngProvided`), mas é a
+        // forma que o compilador consegue enxergar para estreitar `lat`/`lng` para não-nulos dentro
+        // do bloco — evita `!`/null-forgiving nas chamadas de parse logo abaixo.
+        if (lat is not null && lng is not null)
         {
-            // `double.TryParse("NaN", ...)` (o binder de query string do Minimal API) devolve
-            // `true` com `NaN` — e `NaN is < MinLatitude or > MaxLatitude` avalia `false` para
-            // QUALQUER comparação com NaN (IEEE 754: NaN não é maior, menor NEM igual a nada,
-            // nem a si mesmo), então a checagem de faixa abaixo não barra `lat=NaN`/`lng=NaN`
-            // sozinha — `Infinity` já é barrado por ela (é maior que o teto), mas NaN precisa de
-            // checagem própria, ANTES da faixa. Achado do review da T8 (frontend), fechado aqui.
-            if (double.IsNaN(lat.Value) || double.IsNaN(lng.Value))
+            // `double.TryParse("NaN", NumberStyles.Float, ...)` devolve `true` com `NaN` — e
+            // `NaN is < MinLatitude or > MaxLatitude` avalia `false` para QUALQUER comparação com
+            // NaN (IEEE 754: NaN não é maior, menor NEM igual a nada, nem a si mesmo), então a
+            // checagem de faixa abaixo não barra `lat=NaN`/`lng=NaN` sozinha — `Infinity` já é
+            // barrado por ela (é maior que o teto), mas NaN precisa de checagem própria, ANTES da
+            // faixa. Achado do review da T8 (frontend), fechado aqui; preservado pela MET-526 mesmo
+            // com o parse manual (mesmo `NumberStyles.Float`, mesmo símbolo "NaN" reconhecido).
+            if (!TryParseDouble(lat, out var latValue))
             {
                 return SearchRequestValidationResult.Invalid(
-                    "Os parâmetros 'lat' e 'lng' precisam ser números válidos ('NaN' não é uma coordenada).");
+                    $"A latitude precisa ser um número válido (recebeu '{lat}').");
             }
 
-            if (lat.Value is < MinLatitude or > MaxLatitude)
+            if (!TryParseDouble(lng, out var lngValue))
             {
                 return SearchRequestValidationResult.Invalid(
-                    $"O parâmetro 'lat' deve estar entre {MinLatitude.ToString(CultureInfo.InvariantCulture)} e " +
-                    $"{MaxLatitude.ToString(CultureInfo.InvariantCulture)} (recebeu {lat.Value.ToString(CultureInfo.InvariantCulture)}).");
+                    $"A longitude precisa ser um número válido (recebeu '{lng}').");
             }
 
-            if (lng.Value is < MinLongitude or > MaxLongitude)
+            if (double.IsNaN(latValue) || double.IsNaN(lngValue))
             {
                 return SearchRequestValidationResult.Invalid(
-                    $"O parâmetro 'lng' deve estar entre {MinLongitude.ToString(CultureInfo.InvariantCulture)} e " +
-                    $"{MaxLongitude.ToString(CultureInfo.InvariantCulture)} (recebeu {lng.Value.ToString(CultureInfo.InvariantCulture)}).");
+                    "A latitude e a longitude precisam ser números válidos ('NaN' não é uma coordenada).");
             }
 
-            if (radiusKm.HasValue && radiusKm.Value is < MinRadiusKm or > MaxRadiusKm)
+            if (latValue is < MinLatitude or > MaxLatitude)
             {
                 return SearchRequestValidationResult.Invalid(
-                    $"O parâmetro 'radiusKm' deve estar entre {MinRadiusKm} e {MaxRadiusKm} (recebeu {radiusKm.Value}).");
+                    $"A latitude deve estar entre {MinLatitude.ToString(CultureInfo.InvariantCulture)} e " +
+                    $"{MaxLatitude.ToString(CultureInfo.InvariantCulture)} (recebeu {latValue.ToString(CultureInfo.InvariantCulture)}).");
             }
 
-            location = new SearchLocation(lat.Value, lng.Value, radiusKm);
+            if (lngValue is < MinLongitude or > MaxLongitude)
+            {
+                return SearchRequestValidationResult.Invalid(
+                    $"A longitude deve estar entre {MinLongitude.ToString(CultureInfo.InvariantCulture)} e " +
+                    $"{MaxLongitude.ToString(CultureInfo.InvariantCulture)} (recebeu {lngValue.ToString(CultureInfo.InvariantCulture)}).");
+            }
+
+            int? parsedRadiusKm = null;
+
+            if (radiusKm is not null)
+            {
+                // NumberStyles.Integer (sem AllowDecimalPoint): "0.1" falha aqui exatamente como
+                // "abc" — MESMA mensagem para as duas causas (ver XML-doc da classe, "Fracionário em
+                // radiusKm").
+                if (!int.TryParse(radiusKm, NumberStyles.Integer, CultureInfo.InvariantCulture, out var radiusValue))
+                {
+                    return SearchRequestValidationResult.Invalid(
+                        $"O raio de busca deve ser um número inteiro de quilômetros (recebeu '{radiusKm}').");
+                }
+
+                if (radiusValue is < MinRadiusKm or > MaxRadiusKm)
+                {
+                    return SearchRequestValidationResult.Invalid(
+                        $"O raio de busca deve estar entre {MinRadiusKm} e {MaxRadiusKm} quilômetros (recebeu {radiusValue}).");
+                }
+
+                parsedRadiusKm = radiusValue;
+            }
+
+            location = new SearchLocation(latValue, lngValue, parsedRadiusKm);
         }
-        else if (radiusKm.HasValue)
+        else if (radiusKm is not null)
         {
             return SearchRequestValidationResult.Invalid(
-                "O parâmetro 'radiusKm' só é válido quando 'lat' e 'lng' também são informados.");
+                "O raio de busca só é válido quando a localização (latitude e longitude) também é informada.");
         }
 
-        if (limit.HasValue && (limit.Value < 1 || limit.Value > options.MaxResultLimit))
+        var effectiveLimit = options.DefaultResultLimit;
+
+        if (limit is not null)
         {
-            return SearchRequestValidationResult.Invalid(
-                $"O parâmetro 'limit' deve estar entre 1 e {options.MaxResultLimit} (recebeu {limit.Value}).");
-        }
+            if (!int.TryParse(limit, NumberStyles.Integer, CultureInfo.InvariantCulture, out var limitValue))
+            {
+                return SearchRequestValidationResult.Invalid(
+                    $"A quantidade de resultados deve ser um número inteiro (recebeu '{limit}').");
+            }
 
-        var effectiveLimit = limit ?? options.DefaultResultLimit;
+            if (limitValue < 1 || limitValue > options.MaxResultLimit)
+            {
+                return SearchRequestValidationResult.Invalid(
+                    $"A quantidade de resultados deve estar entre 1 e {options.MaxResultLimit} (recebeu {limitValue}).");
+            }
+
+            effectiveLimit = limitValue;
+        }
 
         return SearchRequestValidationResult.Valid(new ValidatedSearchRequest(trimmedQuery, location, effectiveLimit));
     }
+
+    /// <summary>
+    /// <see cref="NumberStyles.Float"/> (sinal + ponto decimal + expoente, sem separador de milhar) —
+    /// mesma tolerância que o binder de query string do Minimal API tinha para <c>double?</c>,
+    /// inclusive os símbolos especiais de <see cref="CultureInfo.InvariantCulture"/>
+    /// (<c>"NaN"</c>/<c>"Infinity"</c>/<c>"-Infinity"</c>, reconhecidos pelo <see cref="double.TryParse(string?, NumberStyles, IFormatProvider?, out double)"/>
+    /// independentemente do estilo pedido) — nenhum comportamento de parsing muda com a MET-526, só
+    /// QUEM faz o parse e o que acontece quando ele falha.
+    /// </summary>
+    private static bool TryParseDouble(string raw, out double value) =>
+        double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 }
 
 /// <summary>Consulta já validada e normalizada (query aparada, localização tipada, limit resolvido).</summary>

@@ -15,9 +15,37 @@ export interface SearchFormProps {
   readonly onExampleQueryClick: (query: string) => void
   readonly onSubmit: () => void
   readonly isSubmitting: boolean
+  /**
+   * `Search:MaxQueryLength` do servidor, ecoado por `GET /api/search/options` (MET-516) —
+   * `null` enquanto as opções ainda não chegaram (ou falharam): sem o número real, o campo não
+   * aplica limite nenhum nem mostra o contador — nunca um valor "chutado" localmente, que poderia
+   * divergir do que o servidor de fato aceita.
+   */
+  readonly maxQueryLength: number | null
 }
 
 const QUERY_ERROR_ID = 'search-query-error'
+const LENGTH_HINT_ID = 'search-query-length-hint'
+
+/**
+ * A partir de quantos caracteres RESTANTES o contador aparece (MET-516: "sinalize a proximidade do
+ * limite de forma discreta") — abaixo disso o campo fica silencioso, exatamente como antes. 20 é um
+ * valor fixo, não uma fração de `maxQueryLength`: um aviso a "10% do limite" seria imperceptível para
+ * um `maxQueryLength` pequeno e apareceria cedo demais para um limite grande; a distância absoluta é
+ * o que importa para quem está prestes a estourar o campo, não a proporção.
+ */
+const LENGTH_HINT_THRESHOLD = 20
+
+/** Texto do contador discreto (MET-516) — singular/plural, e uma frase própria para o limite exato. */
+function formatRemainingCharactersHint(remainingCharacters: number): string {
+  if (remainingCharacters <= 0) {
+    return 'Você atingiu o limite de caracteres da busca.'
+  }
+
+  return remainingCharacters === 1
+    ? 'Falta 1 caractere para o limite da busca.'
+    : `Faltam ${remainingCharacters} caracteres para o limite da busca.`
+}
 
 /**
  * O formulário de busca inteiro (design.md §7; BSC-10/BSC-12): campo rotulado, os três estados de
@@ -38,6 +66,7 @@ export function SearchForm({
   onExampleQueryClick,
   onSubmit,
   isSubmitting,
+  maxQueryLength,
 }: SearchFormProps) {
   const queryInputRef = useRef<HTMLInputElement>(null)
 
@@ -55,6 +84,16 @@ export function SearchForm({
     onSubmit()
   }
 
+  // Contador discreto (MET-516): só existe quando o servidor já disse o limite real
+  // (GET /api/search/options) — nunca um número "chutado" localmente — e só aparece perto do
+  // limite (ver LENGTH_HINT_THRESHOLD), silencioso no resto do tempo.
+  const remainingCharacters = maxQueryLength === null ? null : maxQueryLength - query.length
+  const showLengthHint = remainingCharacters !== null && remainingCharacters <= LENGTH_HINT_THRESHOLD
+
+  const describedByIds = [fieldError ? QUERY_ERROR_ID : null, showLengthHint ? LENGTH_HINT_ID : null]
+    .filter((id): id is string => id !== null)
+    .join(' ')
+
   return (
     <form role="search" onSubmit={handleSubmit} className="search-form">
       <div className="search-form__field">
@@ -69,13 +108,19 @@ export function SearchForm({
           onChange={(event) => {
             onQueryChange(event.target.value)
           }}
-          aria-describedby={fieldError ? QUERY_ERROR_ID : undefined}
+          maxLength={maxQueryLength ?? undefined}
+          aria-describedby={describedByIds || undefined}
           aria-invalid={fieldError ? true : undefined}
           placeholder="Ex.: vazamento no banheiro…"
         />
         {fieldError && (
           <p id={QUERY_ERROR_ID} role="alert" className="search-form__error">
             {fieldError}
+          </p>
+        )}
+        {showLengthHint && (
+          <p id={LENGTH_HINT_ID} className="search-form__length-hint">
+            {formatRemainingCharactersHint(remainingCharacters)}
           </p>
         )}
       </div>

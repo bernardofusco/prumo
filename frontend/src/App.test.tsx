@@ -31,6 +31,7 @@ function optionsResult(): SearchOptionsResult {
     data: {
       embeddingMode: 'precomputed',
       defaultResultLimit: 10,
+      maxQueryLength: 200,
       exampleQueries: ['vazamento no banheiro'],
       cities: [{ name: 'Belo Horizonte', state: 'MG', latitude: -19.9245, longitude: -43.9352 }],
     },
