@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -17,7 +18,7 @@ namespace Prumo.Api.Tests.Search;
 /// que a asserção prove que É aquela regra específica que dispara o 400 — não uma coincidência com
 /// outra regra que dispararia de qualquer forma.
 /// </summary>
-public sealed class SearchRequestValidationTests(WebApplicationFactory<Program> factory)
+public sealed partial class SearchRequestValidationTests(WebApplicationFactory<Program> factory)
     : IClassFixture<WebApplicationFactory<Program>>
 {
     // MinQueryLength, MaxQueryLength e MaxResultLimit default (appsettings.json, Search): 2, 200 e 50.
@@ -238,24 +239,43 @@ public sealed class SearchRequestValidationTests(WebApplicationFactory<Program> 
     }
 
     /// <summary>
-    /// MET-516 (b): nenhuma mensagem de 400 desta rota pode citar o NOME HTTP do parâmetro entre
-    /// aspas simples (<c>'q'</c>, <c>'lat'</c>, <c>'lng'</c>, <c>'radiusKm'</c>, <c>'limit'</c>) — um
-    /// usuário lendo "O parâmetro 'q' é obrigatório" não sabe o que é <c>q</c>; a mensagem tem que
-    /// falar da BUSCA, da LATITUDE/LONGITUDE, do RAIO, da QUANTIDADE DE RESULTADOS. Cobre as sete
-    /// regras de 400 que citavam um nome técnico antes desta correção — regressão de vazamento de
-    /// nome de implementação, não achado novo de comportamento (todas já eram 400 antes e depois).
+    /// MET-516 (b): nenhuma mensagem de 400 desta rota pode APRESENTAR o nome HTTP do parâmetro COMO
+    /// PARÂMETRO — a forma literal das mensagens revertidas por este teste (commit c139cf7):
+    /// "O parâmetro 'q' é obrigatório...", "Os parâmetros 'lat' e 'lng' precisam...". Um usuário lendo
+    /// isso não sabe o que é <c>q</c>; a mensagem tem que falar da BUSCA, da LATITUDE/LONGITUDE, do
+    /// RAIO, da QUANTIDADE DE RESULTADOS.
+    ///
+    /// <para>
+    /// <b>Cobertura real (achado do review desta correção):</b> a versão anterior deste teste tinha
+    /// só 10 <c>InlineData</c> e afirmava cobrir "as sete regras que citavam um nome técnico", mas
+    /// deixava de fora justamente a regra citada literalmente na MET-516 — o print de QA que abriu a
+    /// issue, <c>q</c> acima do tamanho máximo — e as três variantes de <c>lng</c> malformado (NaN,
+    /// fora de faixa, não numérico). O reviewer provou ao vivo que reverter só a mensagem de <c>q</c>
+    /// acima do máximo (<see cref="SearchRequestValidator.Validate"/>, checagem de
+    /// <c>options.MaxQueryLength</c>) de volta para a forma antiga mantinha os 321 testes verdes — a
+    /// correção estava desprotegida exatamente no ponto do relato.
+    /// <see cref="InvalidRequestsCoveringEveryPathOfTheValidator"/> cobre agora TODO caminho de 400 do
+    /// validador: as dez regras que citavam nome técnico ANTES desta correção mais as quatro que a
+    /// MET-526 introduziu depois (não numérico/fora de faixa de <c>lat</c>/<c>lng</c>,
+    /// fracionário/fora de faixa de <c>radiusKm</c>/<c>limit</c>) — nenhuma delas tinha a forma antiga,
+    /// mas nenhuma pode citar o nome técnico também.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>A asserção não é <c>Assert.DoesNotContain("'q'", detail)</c> por nome</b> (achado do
+    /// review): as mensagens de parse (<c>SearchEndpoints.cs</c>, ex. "A latitude precisa ser um
+    /// número válido (recebeu '{lat}')") ecoam o valor CRU digitado pelo cliente entre aspas simples
+    /// — um cliente que manda <c>limit=q</c> produz "(recebeu 'q')", que faria essa asserção falhar
+    /// SEM regressão nenhuma (nenhum <c>InlineData</c> atual dispara isso, mas seria uma armadilha
+    /// para quem acrescentasse um caso depois). <see cref="ParameterNameLeakedAsParameterRegex"/> só
+    /// dispara quando a palavra "parâmetro"/"parâmetros" aparece na MESMA frase (antes do próximo
+    /// ponto final) que um dos cinco nomes técnicos entre aspas — o padrão exato do vazamento (nome
+    /// HTTP apresentado COMO parâmetro), nunca o eco de um valor que por acaso é igual ao nome de um
+    /// parâmetro.
+    /// </para>
     /// </summary>
     [Theory]
-    [InlineData("/api/search")] // q ausente
-    [InlineData("/api/search?q=t")] // q curto demais
-    [InlineData("/api/search?q=vazamento+no+banheiro&lat=-19.9245")] // lat sem lng
-    [InlineData("/api/search?q=vazamento+no+banheiro&lat=abc&lng=-43.9352")] // lat não numérico
-    [InlineData("/api/search?q=vazamento+no+banheiro&lat=91&lng=-43.9352")] // lat fora de faixa
-    [InlineData("/api/search?q=vazamento+no+banheiro&radiusKm=10")] // radiusKm sem localização
-    [InlineData("/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=-43.9352&radiusKm=0.1")] // radiusKm fracionário
-    [InlineData("/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=-43.9352&radiusKm=0")] // radiusKm fora de faixa
-    [InlineData("/api/search?q=vazamento+no+banheiro&limit=abc")] // limit não numérico
-    [InlineData("/api/search?q=vazamento+no+banheiro&limit=0")] // limit fora de faixa
+    [MemberData(nameof(InvalidRequestsCoveringEveryPathOfTheValidator))]
     public async Task GetSearch_WithAnyInvalidRequest_NeverLeaksTheHttpParameterNameInTheMessage(string requestUri)
     {
         var body = await AssertInvalidRequestAsync(requestUri);
@@ -263,12 +283,43 @@ public sealed class SearchRequestValidationTests(WebApplicationFactory<Program> 
         using var document = JsonDocument.Parse(body);
         var detail = document.RootElement.GetProperty("detail").GetString();
 
-        Assert.DoesNotContain("'q'", detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("'lat'", detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("'lng'", detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("'radiusKm'", detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("'limit'", detail, StringComparison.Ordinal);
+        Assert.False(
+            ParameterNameLeakedAsParameterRegex().IsMatch(detail!),
+            $"A mensagem cita o nome HTTP de um parâmetro como se fosse \"parâmetro\": \"{detail}\".");
     }
+
+    /// <summary>
+    /// Um caso por caminho de 400 de <see cref="SearchRequestValidator.Validate"/> — ver XML-doc de
+    /// <see cref="GetSearch_WithAnyInvalidRequest_NeverLeaksTheHttpParameterNameInTheMessage"/> para o
+    /// porquê da lista completa (e não só as sete/dez regras que citavam nome técnico originalmente).
+    /// </summary>
+    public static IEnumerable<object[]> InvalidRequestsCoveringEveryPathOfTheValidator()
+    {
+        yield return new object[] { "/api/search" }; // q ausente
+        yield return new object[] { "/api/search?q=t" }; // q curto demais
+        // q longo demais — MET-516, o repro literal do print de QA que abriu a issue.
+        yield return new object[] { $"/api/search?q={new string('a', DefaultMaxQueryLength + 1)}" };
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=-19.9245" }; // lat sem lng
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=abc&lng=-43.9352" }; // lat não numérico
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=91&lng=-43.9352" }; // lat fora de faixa
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=NaN" }; // lng NaN
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=200" }; // lng fora de faixa
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=abc" }; // lng não numérico
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&radiusKm=10" }; // radiusKm sem localização
+        // radiusKm fracionário
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=-43.9352&radiusKm=0.1" };
+        // radiusKm fora de faixa
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&lat=-19.9245&lng=-43.9352&radiusKm=0" };
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&limit=abc" }; // limit não numérico
+        yield return new object[] { "/api/search?q=vazamento+no+banheiro&limit=0" }; // limit fora de faixa
+    }
+
+    // Vazamento real (MET-516/review desta correção): a palavra "parâmetro"/"parâmetros" seguida, na
+    // mesma frase, por um dos cinco nomes técnicos entre aspas simples — "parâmetro 'q'", "parâmetros
+    // 'lat' e 'lng'". Não casa com o eco de um valor cru do cliente entre aspas (ex. "recebeu 'q'"),
+    // porque essas mensagens nunca contêm a palavra "parâmetro".
+    [GeneratedRegex(@"par[âa]metros?\b[^.]*?'(q|lat|lng|radiusKm|limit)'", RegexOptions.CultureInvariant)]
+    private static partial Regex ParameterNameLeakedAsParameterRegex();
 
     // A prova positiva ("parâmetros válidos NÃO caem em 400") mora em
     // SearchEndpointErrorResponseTests (422/502, sem banco) e em Integration/SearchEndpointTests
