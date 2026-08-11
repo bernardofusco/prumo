@@ -246,32 +246,145 @@ folga que torna o conjunto discriminante. Este número é informativo (prova a p
 asserção do teste exige); o valor oficial, ao lado de semântica e híbrido na mesma tabela, é o que a
 T11 publica.
 
-## Grid de calibração e limiares — ainda não medidos
+## Grid de calibração e limiares — MEDIDO (T11), régua NÃO fechou
 
-A tabela completa do grid (18 pontos: `semanticWeight × distanceDecayKm`), a comparação
-só-semântica vs. híbrido e os pesos efetivamente escolhidos **ficam em branco até a T11** rodar o eval
-de verdade contra Postgres + pgvector com vetores reais. Os limiares (`hit@3 = 1,00`,
-`precision@5 ≥ 0,70`, ordem 100% satisfeita) estão fixados na spec (MET-479, "Medição do Case →
-Limiares") e não são decisão desta task — nenhum agente decide piso ou peso; quem mede é a T11, quem
-ratifica é o dono (spec, P2).
+**Medição real** (2026-08-10), `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs`, contra
+Postgres + pgvector real (Testcontainers), corpus semeado com os vetores REAIS de
+`db/seed/embeddings/text-embedding-bge-m3.json` (não `hashing`), consultas vetorizadas pelo MESMO
+`SearchQueryEmbedder`/`PrecomputedEmbeddingStore` que a API usa, candidatos recuperados por
+`ProfessionalSearchQuery` (a mesma consulta SQL da API) e re-ranqueados pelos 18 pontos com
+`HybridRanker.Rank` — a mesma camada de busca, ponta a ponta, exceto o transporte HTTP. As métricas
+são calculadas sobre a lista TRUNCADA em `Search:DefaultResultLimit` (10) — a mesma lista que a API
+devolveria a um cliente que não informa `limit` (spec.md "Medição do Case → Métricas": "sobre a lista
+retornada pela API"). **Recomputada de forma independente**, em Python, sem reusar o código C# desta
+task: bateu até a 4ª casa decimal, incluindo os top-5 e os scores das falhas.
 
-<!-- T11 preenche a tabela abaixo; T12 confere que os números aqui batem com a saída do teste. -->
+⛔ **Resultado: nenhum dos 18 pontos do grid satisfaz L1 (`hitRate@3 = 1,00`) e L3 (100% da ordem)
+simultaneamente.** Por isso a T11 **PARA aqui** — não escolhe pesos, não sobe o piso L2, não altera
+`appsettings.json`, não toca `golden-set.json`. A tabela abaixo é a saída real e completa do teste
+(nenhum ponto foi omitido):
 
 | `semanticWeight` | `distanceDecayKm` | `hitRate@3` | `meanPrecision@5` | ordem 100%? |
 |---|---|---|---|---|
-| *(pendente — T11)* | | | | |
+| 1,0 | 5  | 0,80 | 0,42 | não (1/2) |
+| 1,0 | 10 | 0,80 | 0,42 | não (1/2) |
+| 1,0 | 20 | 0,80 | 0,42 | não (1/2) |
+| 0,9 | 5  | 0,75 | 0,42 | sim (2/2) |
+| 0,9 | 10 | 0,75 | 0,42 | sim (2/2) |
+| 0,9 | 20 | 0,75 | 0,42 | sim (2/2) |
+| 0,8 | 5  | 0,75 | 0,40 | sim (2/2) |
+| 0,8 | 10 | 0,75 | 0,40 | sim (2/2) |
+| 0,8 | 20 | 0,75 | 0,41 | sim (2/2) |
+| 0,7 | 5  | 0,75 | 0,40 | sim (2/2) |
+| 0,7 | 10 *(configurado, provisório)* | 0,75 | 0,40 | não (1/2) |
+| 0,7 | 20 | 0,75 | 0,40 | sim (2/2) |
+| 0,6 | 5  | 0,75 | 0,39 | não (0/2) |
+| 0,6 | 10 | 0,75 | 0,40 | não (0/2) |
+| 0,6 | 20 | 0,75 | 0,40 | não (1/2) |
+| 0,5 | 5  | 0,75 | 0,39 | não (0/2) |
+| 0,5 | 10 | 0,75 | 0,39 | não (0/2) |
+| 0,5 | 20 | 0,75 | 0,40 | não (0/2) |
 
-**Pesos escolhidos:** *(pendente — T11, com a regra de escolha da spec aplicada e justificada aqui)*
+A coluna de ordem é sensível ao truncamento em 10: no par de `gs-16`, `ana-oliveira-bh-001` fica na
+posição 1 e `maria-nunes-ctg-003` na posição 11 de 18 candidatos no ponto configurado — fora do
+`limit` default da API. Uma primeira versão desta medição não truncava a lista antes de checar
+`expectedRankedAbove` (só o baseline lexical/L1/L3 do grid; hit@3/precision@5 são indiferentes a isso,
+porque só olham os 3/5 primeiros) e por isso publicava "2/2" em 7 pontos que, sob o `limit` real da
+API, caem para "1/2" ou "0/2" — o ponto configurado entre eles. Corrigido aqui. O veredito não muda (0
+pontos elegíveis antes e depois), mas o número por ponto, sim — e na direção que fazia o sistema
+parecer melhor do que entrega.
 
-**Só-semântica vs. híbrido:** *(pendente — T11; o ponto `semanticWeight = 1,0` do grid é a própria
-linha de base)*
+Para referência, ao lado (não é um ponto do grid — é o baseline lexical já medido pela revisão da T3,
+determinístico, sem vetor nenhum, mesmo golden set): `hitRate@3 = 0,55` (baseline lexical) < `0,75`–`0,80`
+(qualquer ponto do grid, semântico/híbrido) < `1,00` (piso L1 exigido). A busca semântica bate o baseline
+lexical com folga, mas nenhum ponto medido alcança o piso.
 
-**Sobreajuste, dito sem rodeio:** calibrar até 18 pontos contra as mesmas 20 consultas que os avaliam
-é sobreajuste — o case não finge o contrário. Três mitigações, nenhuma delas prova generalização:
-o grid é pequeno e declarado *a priori* (não se amplia depois de ver o resultado); o desempate
-favorece o modelo mais simples (maior `semanticWeight`, menor dependência do fator geográfico); a
-tabela **inteira** é publicada, não só o vencedor. Vinte consultas medem uma direção, não uma
-garantia.
+**Só-semântica vs. híbrido:** o ponto `semanticWeight = 1,0` (só-semântica) tem o **melhor** `hitRate@3`
+do grid inteiro (0,80 — resgata `gs-18`, cabeleireiro, que os demais pontos perdem porque a proximidade
+promove um profissional mais perto e irrelevante à frente dele) mas está entre os 10 dos 18 pontos que
+falham L3 sob o `limit` real da API: os 3 pontos `w_s = 1,0` falham porque a proximidade zerada quebra o
+desempate por distância dos dois pares de `expectedRankedAbove`; outros 7 (o ponto configurado
+`w_s=0,7/tau=10`, e todo `w_s ∈ {0,5; 0,6}`) falham porque, sob pesos mais baixos, o segundo membro de
+ao menos um dos pares cai fora do top-10 ou perde a disputa de ordem. Só 8 dos 18 pontos (todo
+`w_s ∈ {0,8; 0,9}`, mais `w_s=0,7/tau∈{5,20}`) preservam os dois pares dentro do `limit` — e nenhum
+deles chega perto de L1. Nenhum ponto — nem o mais simples, nem nenhum híbrido — chega a 1,00 de
+`hitRate@3`: as 4 consultas sem localização que falham (`gs-05`, `gs-07`, `gs-09`, `gs-14`) têm
+`score = semântica bruta` **independente de qualquer peso** (D4/ADR-003 — "sem localização, o peso
+`w_s` não se aplica"), então nenhum ponto do grid poderia tê-las resgatado.
+
+**Pesos escolhidos: NÃO ESCOLHIDOS.** A regra de escolha da spec ("descartar pontos que violem L1 ou
+L3 → maior `meanPrecision@5` → empate...") pressupõe ao menos um ponto sobrevivente ao primeiro filtro;
+aqui a lista de sobreviventes está vazia. `appsettings.json:Ranking` permanece com os valores
+PROVISÓRIOS da T1 (0,7 / 0,3 / 10 / 0,0, comentário "provisório" mantido) — trocar por qualquer ponto
+do grid seria inventar um vencedor que a própria medição não produziu.
+
+**Limiar L2: NÃO RATIFICÁVEL a partir desta medição.** A regra de calibração ("o piso medido
+arredondado para baixo, nunca abaixo de 0,70") só se aplica a partir de um ponto que já satisfaça L1/L3
+— não existe aqui. O piso permanece o da spec (0,70), sem ter sido testado por um ponto válido.
+
+**`MinSemanticScore`: mantido em 0** (racional, apoiado pela medição): em 3 das 5 consultas que falham
+(`gs-09`, `gs-14`, `gs-18` — ver hipóteses abaixo), o candidato relevante já está presente nas posições
+4–5 do top-5, com o fator **semântico** (`factors.semantic`, não o score final — os dois só coincidem
+quando não há localização) ainda relativamente alto: 0,5709 (`gs-09`), 0,5985/0,5780 (`gs-14`, dois
+candidatos), 0,5129 (`gs-18` — este É uma consulta com localização, então seu score final publicado nos
+resultados, 0,5931, mistura proximidade e NÃO é o fator semântico; o fator semântico isolado é 0,5129).
+Um corte cortaria justamente esses candidatos relevantes antes de ajudar em qualquer coisa. O problema
+medido é de **ranking** (o relevante não sobe ao top-3), não de **ruído** (irrelevante entrando por
+proximidade). Cortar não resolve um problema de ordenação.
+
+### Hipóteses (ordem de diagnóstico pré-comprometida, aplicada à medição real)
+
+As 5 consultas que reprovam L1 no ponto configurado (0,7/10): `gs-05` (pintor), `gs-07` (diarista),
+`gs-09` (chaveiro), `gs-14` (vidraceiro) — todas **sem localização** — e `gs-18` (cabeleireiro, **com**
+localização). Note que a medição preliminar do Reviewer da T10 (sem aplicar geolocalização) tinha
+apontado `gs-19` em vez de `gs-18` entre as cinco — a diferença confirma que a geolocalização importa
+(`gs-19`, manicure/Uberlândia, passa quando o raio real restringe os candidatos a ~9 profissionais da
+região; `gs-18`, cabeleireiro/Petrópolis, ainda assim falha mesmo com geo aplicada corretamente).
+
+1. **O modelo de embeddings primeiro (suspeito principal, evidência forte).** Três das cinco falhas
+   (`gs-09`, `gs-14`, `gs-18`) são "quase-acerto": o profissional relevante aparece nas posições 4 ou 5
+   do top-5 (não no top-3) — chaveiro Juliana Costa em 4º (fator semântico 0,5709), vidraceiro Fábio
+   Almeida em 4º (0,5985) e Mateus Santos em 5º (0,5780), cabeleireiro Diego Freitas em 4º (fator
+   semântico 0,5129 — o score final publicado nos resultados de busca, 0,5931, é o HÍBRIDO, que já
+   inclui a proximidade; não confundir os dois). As outras duas (`gs-05`, `gs-07`) são falhas mais
+   severas: a especialidade esperada não aparece em lugar nenhum do top-5. Nas **5 de 5** falhas um
+   profissional de `tecnico-ar-condicionado` aparece no top-5 como distrator — um padrão sistemático
+   que sugere uma região do espaço de embeddings onde descrições de "conserto/resolvo problema em casa"
+   (linguagem genérica de manutenção residencial, comum nas descrições de ar-condicionado do corpus)
+   atrai consultas de outras especialidades por semelhança de superfície. As 5 consultas que falham
+   fazem parte das **16** consultas reescritas pela revisão da T3 para exigir **ponte conceitual** (zero
+   palavra de conteúdo em comum com a descrição-alvo) — mas não são a totalidade desse grupo: das 16,
+   **11 passam** e só essas 5 falham, um subconjunto, não o grupo inteiro. O MESMO endpoint local (LM
+   Studio, `bge-m3`/Q8_0) usado para gerar os vetores REAIS deste repo (`db/seed/embeddings/`, T9 da
+   MET-478; `eval/embeddings/`, T10 desta spec) já tinha sido **verificado e reprovado** para essa
+   propriedade especificamente pelo review da T3 ("casa paráfrase de superfície e erra ponte conceitual"
+   — ver "Sobre a plausibilidade das 20 consultas" acima), antes de qualquer vetor real existir. A
+   medição da T11 **confirma** esse achado prévio contra dado real (num subconjunto do grupo de risco
+   que ele apontava, não no grupo inteiro), em vez de introduzir um achado novo.
+2. **A densidade do corpus por especialidade×cidade, depois — suspeito fraco aqui.** Só `gs-18` tem
+   localização entre as 5 falhas; as outras 4 não têm nenhum filtro geográfico (D4 — todo o corpus de
+   150 é candidato), então densidade geográfica não pode ser a causa para elas. Para `gs-18`
+   especificamente (Petrópolis, 8 candidatos no raio, 1 relevante), densidade baixa é plausível como
+   fator secundário, mas não explica as outras 4/5 falhas — por isso este item permanece hipótese
+   secundária, não a explicação principal.
+3. **Só então a fórmula — descartada como causa principal por esta própria medição.** O ponto mais
+   favorável possível a uma correção por peso (`semanticWeight = 1,0`, proximidade completamente
+   desligada) resgata **só** `gs-18` (a única falha que tem localização) e ainda assim `hitRate@3` para
+   em 0,80, não 1,00 — as 4 falhas sem localização são estruturalmente imunes a qualquer peso (D4:
+   `score = semântica bruta`, independente de `w_s`). A fórmula não é a causa.
+
+**Conclusão desta task:** a régua não fecha com o modelo/corpus atuais. A decisão (trocar de
+modelo/dimensão de embedding, aceitar um corpus/golden-set revisado — fora da janela livre, exige ADR —
+ou ratificar um piso L1/L2 menor) é do dono, via ADR que supersede a ADR-003 e/ou a spec desta issue.
+Nenhuma dessas ações foi tomada por este agente.
+
+**Sobreajuste, dito sem rodeio:** ainda que a régua não tenha fechado, a mitigação continua valendo
+para a leitura da tabela acima: calibrar até 18 pontos contra as mesmas 20 consultas que os avaliam
+seria sobreajuste se um vencedor tivesse sido escolhido — o grid é pequeno e declarado *a priori* (não
+se amplia depois de ver o resultado, e não se ampliou aqui apesar do resultado desfavorável); o
+desempate favoreceria o modelo mais simples (maior `semanticWeight`, menor dependência do fator
+geográfico); a tabela **inteira** é publicada, não só um vencedor (que, neste caso, não existe). Vinte
+consultas medem uma direção, não uma garantia — e aqui a direção medida é "ainda não".
 
 ## Congelamento
 
@@ -366,8 +479,15 @@ boot).
 
 **T10 concluída** (2026-08-10): `db/seed/embeddings/text-embedding-bge-m3.json` (corpus, T9) e
 `eval/embeddings/text-embedding-bge-m3.json` (consultas do golden set, T10) existem, ambos com
-`model: "openai-compatible:text-embedding-bge-m3@1024"`. **T11 (o eval, o grid de 18 pontos e a
-calibração dos pesos) ainda não rodou** — a tabela da seção "Grid de calibração e limiares" acima,
-os limiares L1–L4 medidos de verdade e a comparação só-semântica vs. híbrido continuam pendentes
-dessa task, não desta. Enquanto T11 não roda, o que este diretório garante é a **conformidade
-estrutural** da régua (T3) — a régua está pronta para medir.
+`model: "openai-compatible:text-embedding-bge-m3@1024"`.
+
+**T11 rodou** (2026-08-10) — `tests/Prumo.Api.Tests/Integration/GoldenSetEvalTests.cs` mede as 20
+consultas contra Postgres + pgvector real, com vetores REAIS, pela mesma camada de busca da API — mas
+**a régua não fechou**: nenhum dos 18 pontos do grid declarado satisfaz L1 (`hitRate@3 = 1,00`) e L3
+(100% da ordem) simultaneamente. A tabela completa medida, a comparação só-semântica vs. híbrido e as
+hipóteses (ordem de diagnóstico pré-comprometida) estão na seção "Grid de calibração e limiares" acima.
+**Nenhum peso foi escolhido, nenhum limiar foi ratificado, `appsettings.json` permanece com os valores
+provisórios da T1** — por decisão explícita da spec ("se o melhor ponto ficar abaixo do piso, a task
+para e reporta"; aqui o próprio L1 não fecha, o que é ainda mais upstream). A decisão sobre como
+prosseguir (modelo/dimensão de embedding, corpus, ou ratificar um piso menor via ADR) é do dono — ver o
+relatório da T11 (handoff do Developer) para a tabela e as hipóteses na íntegra.
