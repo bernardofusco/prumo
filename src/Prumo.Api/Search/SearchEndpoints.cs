@@ -27,11 +27,17 @@ namespace Prumo.Api.Search;
 /// </para>
 ///
 /// <para>
-/// <b>Segredos (spec, "Segredos"):</b> o único log desta rota é UMA linha de <c>LogInformation</c> no
-/// fim do caminho feliz — registra contagem e modo, NUNCA o texto da consulta nem a coordenada. O
-/// caminho 502 carrega só <c>ex.Message</c> de <see cref="SearchQueryEmbeddingProviderException"/>, que
-/// já garante (T5, <c>SearchQueryEmbedderTests</c> "não vaza segredo") citar apenas status HTTP e
-/// endpoint — nunca chave, cabeçalho ou corpo.
+/// <b>Segredos (spec, "Segredos"):</b> o caminho feliz loga UMA linha de <c>LogInformation</c> —
+/// contagem e modo, NUNCA o texto da consulta nem a coordenada. O 422
+/// <see cref="QueryEmbeddingUnavailableReason.NoPrecomputedVector"/> (ver
+/// <see cref="EmbeddingUnavailableProblem"/>) loga uma SEGUNDA linha, pelo mesmo motivo e com a mesma
+/// restrição (nunca o texto da consulta): a instrução de configuração
+/// (<c>Embeddings__Provider=openai-compatible</c>) que o `detail` público deste caso NÃO carrega mais
+/// (MET-529) — quem opera o servidor lê o log, não o corpo HTTP que qualquer cliente vê. O caminho 502
+/// carrega só <c>ex.Message</c> de <see cref="SearchQueryEmbeddingProviderException"/>, que já garante
+/// (T5, <c>SearchQueryEmbedderTests</c> "não vaza segredo") citar apenas status HTTP e endpoint —
+/// nunca chave, cabeçalho, corpo, ou (desde MET-529) vocabulário de configuração de servidor (nome de
+/// variável de ambiente, par <c>Chave=valor</c>).
 /// </para>
 /// </summary>
 public static class SearchEndpoints
@@ -163,6 +169,17 @@ public static class SearchEndpoints
 
         if (embeddingResult.Mode == QueryEmbeddingMode.Unavailable)
         {
+            if (embeddingResult.UnavailableReason == QueryEmbeddingUnavailableReason.NoPrecomputedVector)
+            {
+                // MET-529: a instrução de configuração NÃO vai mais no `detail` público (vocabulário
+                // de servidor não pertence ao corpo HTTP que qualquer cliente lê, ver XML-doc da
+                // classe) — só no log do servidor, e sem o texto da consulta (spec, "Segredos").
+                logger.LogInformation(
+                    "Search query has no precomputed vector and no live embedding provider is " +
+                    "configured. Configure Embeddings__Provider=openai-compatible to accept free-form " +
+                    "text (see README.md, \"Sem provedor de embeddings configurado\").");
+            }
+
             return EmbeddingUnavailableProblem(embeddingResult.UnavailableReason, precomputedStore, searchOptions);
         }
 
@@ -381,6 +398,18 @@ public static class SearchEndpoints
     /// sub-caso, e D8 se chama "erro honesto". Os dois <c>detail</c> abaixo distinguem as causas
     /// reais sem trocar o status.
     /// </para>
+    ///
+    /// <para>
+    /// <b>MET-529:</b> o sub-caso <see cref="QueryEmbeddingUnavailableReason.NoPrecomputedVector"/>
+    /// mandava "configure Embeddings__Provider=openai-compatible" DIRETO no `detail` — vocabulário de
+    /// CONFIGURAÇÃO DE SERVIDOR no corpo HTTP público (problem+json é contrato público; a tela ignora
+    /// esse `detail` neste caso específico, <c>App.tsx</c>, mas qualquer outro cliente — curl, aba de
+    /// rede — o lê como está). O `detail` abaixo passa a conter só vocabulário de PRODUTO: explica que
+    /// esta demo responde a um conjunto fixo de consultas com vetor pronto e aponta as que funcionam
+    /// (<c>exampleQueries</c>, já no corpo). Quem CONFIGURA o servidor lê a instrução removida daqui no
+    /// log (<see cref="HandleSearchAsync"/>) e na documentação (README.md, "Sem provedor de embeddings
+    /// configurado").
+    /// </para>
     /// </summary>
     private static IResult EmbeddingUnavailableProblem(
         QueryEmbeddingUnavailableReason? reason, PrecomputedEmbeddingStore store, SearchOptions options)
@@ -395,11 +424,12 @@ public static class SearchEndpoints
                 "ou uma das consultas de demonstração listadas.",
 
             // NoPrecomputedVector (ou nulo, defensivo) — nenhum artefato pré-computado tem esta
-            // consulta, e não há provedor vivo configurado para tentar de outro jeito.
+            // consulta, e não há provedor vivo configurado para tentar de outro jeito. MET-529: só
+            // vocabulário de PRODUTO aqui — a instrução de configuração vai para o log do servidor
+            // (HandleSearchAsync) e para a documentação, nunca para este corpo HTTP público.
             _ =>
-                "Esta consulta não tem vetor pré-computado e nenhum provedor de embeddings vivo está " +
-                "configurado para vetorizar texto livre. Tente uma das consultas de demonstração " +
-                "listadas, ou configure Embeddings__Provider=openai-compatible.",
+                "Esta demonstração responde a um conjunto fixo de consultas com vetor pronto, e esta " +
+                "consulta não está nesse conjunto. Tente uma das consultas de demonstração listadas.",
         };
 
         return TypedResults.Problem(

@@ -197,19 +197,26 @@ public sealed class OpenAiCompatibleEmbeddingProvider : IEmbeddingProvider
         }
     }
 
+    // MET-529: as três mensagens abaixo citam status HTTP e o endpoint (`_embeddingsUri`) — o par que
+    // a spec SANCIONA no corpo público do 502 (spec.md, tabela de erros: "status e endpoint, jamais
+    // chave, cabeçalho ou corpo"). Nenhuma cita nome de variável de ambiente nem par `Chave=valor`
+    // (antes citavam "Confira Embeddings__BaseUrl/Model/ApiKey") — essa instrução de CONFIGURAÇÃO é
+    // para quem opera o servidor, não para quem recebe a resposta HTTP: este `Message` é reaproveitado
+    // sem cópia por `SearchQueryEmbedder.EmbedWithExternalProviderAsync`, que o repassa direto ao
+    // `detail` público de `GET /api/search` (502 `embedding_provider_error`); a documentação
+    // (README.md, "Sem provedor de embeddings configurado") é quem carrega a instrução agora.
     private string BuildHttpErrorMessage(HttpStatusCode statusCode, string? reasonPhrase) =>
         $"Falha ao chamar o provedor de embeddings openai-compatible: HTTP {(int)statusCode} " +
-        $"{reasonPhrase} em '{_embeddingsUri}'. Confira Embeddings__BaseUrl, Embeddings__Model e " +
-        "Embeddings__ApiKey (nunca exibidos em mensagem de erro) e a disponibilidade do endpoint.";
+        $"{reasonPhrase} em '{_embeddingsUri}'. Verifique a disponibilidade do endpoint.";
 
     private string BuildNetworkFailureMessage() =>
         $"Falha de rede ao chamar o provedor de embeddings openai-compatible em '{_embeddingsUri}'. " +
-        "Confira Embeddings__BaseUrl e a disponibilidade do endpoint.";
+        "Verifique a disponibilidade do endpoint.";
 
     private string BuildTimeoutMessage() =>
         $"Timeout ({_httpClient.Timeout}) ao chamar o provedor de embeddings openai-compatible em " +
-        $"'{_embeddingsUri}'. Sem retry (design.md §4.4) — confira Embeddings__BaseUrl e a " +
-        "disponibilidade/latência do endpoint.";
+        $"'{_embeddingsUri}'. Sem retry (design.md §4.4) — verifique a disponibilidade/latência do " +
+        "endpoint.";
 
     private string BuildMalformedResponseMessage() =>
         $"Resposta em formato inesperado do provedor de embeddings openai-compatible em " +

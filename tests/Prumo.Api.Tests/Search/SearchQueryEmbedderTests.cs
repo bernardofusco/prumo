@@ -307,10 +307,10 @@ public sealed class SearchQueryEmbedderTests : IDisposable
     /// <summary>
     /// Quatro formatos de falha real de <c>OpenAiCompatibleEmbeddingProvider</c> (401, 500, timeout,
     /// resposta malformada — cada um já citando status/endpoint em <c>Message</c>, do jeito que
-    /// aquele provider real garante) mais uma <see cref="Exception.InnerException"/> aninhada
-    /// carregando <see cref="LeakCanary"/>, simulando o que aconteceria se uma implementação futura
-    /// (ou mal comportada) de <see cref="IEmbeddingProvider"/> deixasse algo sensível numa exceção
-    /// mais profunda.
+    /// aquele provider real garante, MET-529: nunca vocabulário de configuração de servidor) mais uma
+    /// <see cref="Exception.InnerException"/> aninhada carregando <see cref="LeakCanary"/>, simulando
+    /// o que aconteceria se uma implementação futura (ou mal comportada) de
+    /// <see cref="IEmbeddingProvider"/> deixasse algo sensível numa exceção mais profunda.
     /// </summary>
     public static IEnumerable<object[]> ProviderFailureShapes()
     {
@@ -319,8 +319,7 @@ public sealed class SearchQueryEmbedderTests : IDisposable
             "401",
             new InvalidOperationException(
                 "Falha ao chamar o provedor de embeddings openai-compatible: HTTP 401 Unauthorized em " +
-                "'http://fake-embeddings.test/v1/embeddings'. Confira Embeddings__BaseUrl, " +
-                "Embeddings__Model e Embeddings__ApiKey (nunca exibidos em mensagem de erro).",
+                "'http://fake-embeddings.test/v1/embeddings'. Verifique a disponibilidade do endpoint.",
                 new Exception($"cabeçalho capturado por engano: Authorization: Bearer {LeakCanary}")),
         };
         yield return new object[]
@@ -368,6 +367,13 @@ public sealed class SearchQueryEmbedderTests : IDisposable
 
         Assert.DoesNotContain(LeakCanary, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(LeakCanary, exception.ToString(), StringComparison.Ordinal);
+
+        // MET-529: mesma disciplina "não vaza segredo", estendida a vocabulário de CONFIGURAÇÃO DE
+        // SERVIDOR (nome de variável de ambiente, par `Chave=valor`) — este `Message` vira o `detail`
+        // público do 502; status/endpoint continuam permitidos (spec.md, tabela de erros).
+        Assert.DoesNotContain("Embeddings__", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Embeddings:", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Provider=", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -206,6 +206,12 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
 
         Assert.Contains("401", exception.Message, StringComparison.Ordinal);
         Assert.Contains(BaseUrl, exception.Message, StringComparison.Ordinal);
+
+        // MET-529: este `Message` vira o `detail` público do 502 de GET /api/search quando chamado
+        // via SearchQueryEmbedder — status/endpoint continuam permitidos (spec.md, tabela de erros),
+        // mas nenhuma instrução de CONFIGURAÇÃO DE SERVIDOR (antes: "Confira Embeddings__BaseUrl,
+        // Embeddings__Model e Embeddings__ApiKey").
+        Assert.DoesNotContain("Embeddings__", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -221,6 +227,9 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
 
         Assert.Contains(BaseUrl, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("sk-should-not-appear-either", exception.ToString(), StringComparison.Ordinal);
+
+        // MET-529 — ver comentário equivalente acima.
+        Assert.DoesNotContain("Embeddings__", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -256,6 +265,9 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
         Assert.IsType<TimeoutException>(exception.InnerException!.InnerException);
         Assert.Contains(BaseUrl, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("sk-should-not-appear-in-a-timeout-either", exception.ToString(), StringComparison.Ordinal);
+
+        // MET-529 — ver comentário equivalente em EmbedAsync_ThrowsAnErrorCitingTheHttpStatus_...
+        Assert.DoesNotContain("Embeddings__", exception.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
