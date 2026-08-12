@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using Prumo.Api.ErrorHandling;
 using Prumo.Api.Search;
@@ -28,7 +29,8 @@ namespace Prumo.Api.Tests.ErrorHandling;
 /// </summary>
 internal static class GlobalExceptionHandlerTestHost
 {
-    public static async Task<WebApplication> StartAsync(Func<IResult> throwingHandler, string environmentName = "Development")
+    public static async Task<WebApplication> StartAsync(
+        Func<IResult> throwingHandler, string environmentName = "Development", ILoggerProvider? loggerProvider = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Environment.EnvironmentName = environmentName;
@@ -38,6 +40,14 @@ internal static class GlobalExceptionHandlerTestHost
         // AddExceptionHandler) — não uma versão simplificada que só "parece" certa.
         builder.Services.AddProblemDetails(SearchEndpoints.ConfigureProblemDetails);
         builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+        if (loggerProvider is not null)
+        {
+            // Usado por GlobalExceptionHandlerTests para provar "nenhum log duplicado" (achado do
+            // review do ciclo 1): sem isto, não há como CONTAR quantas vezes cada categoria logou.
+            builder.Logging.SetMinimumLevel(LogLevel.Trace);
+            builder.Logging.AddProvider(loggerProvider);
+        }
 
         var app = builder.Build();
 

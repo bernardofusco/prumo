@@ -10,9 +10,9 @@ namespace Prumo.Api.Tests.ErrorHandling;
 /// <summary>
 /// Reproduz o defeito original da MET-530 através do PRÓPRIO <c>Program.cs</c>
 /// (<see cref="WebApplicationFactory{TEntryPoint}"/>, o mesmo host que serve a API de verdade) — não
-/// um host de teste simplificado. Nenhum destes testes precisa de Postgres nem de Docker: a exceção
-/// (<c>InvalidOperationException</c> do Npgsql, "The ConnectionString property has not been
-/// initialized.") acontece ANTES de qualquer tentativa de rede.
+/// um host de teste simplificado. Nenhum destes testes precisa de Postgres nem de Docker: as duas
+/// exceções reproduzidas aqui (connection string ausente; host inalcançável — porta fechada) acontecem
+/// sem completar nenhuma conexão de rede real.
 ///
 /// <para>
 /// <see cref="WebApplicationFactory{TEntryPoint}"/> roda em Development por padrão (confirmado ao
@@ -21,9 +21,25 @@ namespace Prumo.Api.Tests.ErrorHandling;
 /// quem clona o repo), sem precisar de nenhuma configuração extra aqui. É o mesmo host usado por
 /// <c>HealthEndpointTests</c>/<c>HealthDbEndpointTests</c>/<c>SearchOptionsEndpointTests</c>.
 /// </para>
+///
+/// <para>
+/// <b>Bloqueante do review do ciclo 1:</b>
+/// <see cref="GetSearchOptions_WithAnUnreachableHostConfigured_Returns503ServiceUnavailable"/> —
+/// PORTA FECHADA (banco fora do ar), não connection string ausente. Antes da correção do classificador
+/// (percorrer a cadeia de <c>InnerException</c>, não só a exceção de topo), este teste FALHAVA: a API
+/// devolvia 500 <c>internal_error</c> porque o <c>ExecutionStrategy</c> do EF Core embrulha a falha de
+/// conexão num <see cref="InvalidOperationException"/> cujo <c>Exception.Source</c> não é
+/// <c>"Npgsql"</c> — o <c>NpgsqlException</c> real fica um nível abaixo, em <c>InnerException</c>, e a
+/// classificação antiga não olhava lá. Rodado ao vivo antes e depois da correção (ver relatório da
+/// task para a saída de <c>dotnet test</c> dos dois lados).
+/// </para>
 /// </summary>
 public sealed class UnhandledExceptionThroughRealProgramTests
 {
+    /// <summary>Loopback + porta alta sem listener: falha rápido (connection refused), sem depender de Postgres nem de Docker.</summary>
+    private const string UnreachableConnectionString =
+        "Host=127.0.0.1;Port=1;Database=prumo;Username=prumo_dev;Password=prumo_dev_only_change_me;Timeout=1";
+
     [Fact]
     public async Task GetSearchOptions_WithoutConnectionStringConfigured_Returns503ServiceUnavailable()
     {
@@ -43,6 +59,31 @@ public sealed class UnhandledExceptionThroughRealProgramTests
         // sintomas do bug original: tipo .NET, mensagem de conexão, extensão "exception".
         Assert.DoesNotContain("Exception", body, StringComparison.Ordinal);
         Assert.DoesNotContain("ConnectionString", body, StringComparison.Ordinal);
+        Assert.False(document.RootElement.TryGetProperty("exception", out _));
+    }
+
+    /// <summary>Ver XML-doc da classe, "Bloqueante do review do ciclo 1" — este é o teste que faltava.</summary>
+    [Fact]
+    public async Task GetSearchOptions_WithAnUnreachableHostConfigured_Returns503ServiceUnavailable()
+    {
+        using var factory = CreateFactory(UnreachableConnectionString);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(new Uri("/api/search/options", UriKind.Relative));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("service_unavailable", document.RootElement.GetProperty("code").GetString());
+
+        // Asserção sobre o corpo INTEIRO serializado — nenhum tipo .NET, nenhum detalhe de conexão
+        // (host, porta, usuário), nenhuma extensão "exception".
+        Assert.DoesNotContain("Exception", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ConnectionString", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("127.0.0.1", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("prumo_dev", body, StringComparison.Ordinal);
         Assert.False(document.RootElement.TryGetProperty("exception", out _));
     }
 
@@ -105,14 +146,17 @@ public sealed class UnhandledExceptionThroughRealProgramTests
     }
 
     private static WebApplicationFactory<Program> CreateFactoryWithoutConnectionString() =>
+        CreateFactory(connectionString: null);
+
+    private static WebApplicationFactory<Program> CreateFactory(string? connectionString) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(webHostBuilder =>
             webHostBuilder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    // Explicitamente null (não só "nunca configurado"): garante o cenário mesmo que a
-                    // máquina que roda o teste tenha ConnectionStrings__Prumo no ambiente — este
-                    // provider, adicionado por último, tem precedência e sobrepõe qualquer valor
-                    // anterior para a mesma chave (mesmo padrão de HealthDbEndpointTests).
-                    ["ConnectionStrings:Prumo"] = null,
+                    // Este provider, adicionado por último, tem precedência e sobrepõe qualquer valor
+                    // anterior para a mesma chave (mesmo padrão de HealthDbEndpointTests) — inclusive
+                    // um ConnectionStrings__Prumo que porventura exista no ambiente de quem roda o
+                    // teste, quando connectionString é null.
+                    ["ConnectionStrings:Prumo"] = connectionString,
                 })));
 }

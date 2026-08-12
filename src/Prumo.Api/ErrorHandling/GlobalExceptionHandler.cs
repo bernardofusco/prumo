@@ -43,29 +43,67 @@ namespace Prumo.Api.ErrorHandling;
 /// <see cref="InvalidOperationException"/> lançado DENTRO do assembly <c>Npgsql</c>
 /// (<see cref="Exception.Source"/> == <c>"Npgsql"</c> — é assim, por exemplo, que
 /// <c>NpgsqlConnection.Open()</c> reporta "The ConnectionString property has not been initialized."
-/// quando <c>ConnectionStrings:Prumo</c> está ausente ou vazia: confirmado ao vivo contra o Npgsql
-/// 10.0.3 real, tanto via <c>NpgsqlConnection</c> direto quanto através do
-/// <see cref="Data.PrumoDbContext"/> — mesmo tipo, mesma mensagem, mesma
-/// <see cref="Exception.Source"/> nos dois caminhos) — vira 503, MESMO vocabulário de
+/// quando <c>ConnectionStrings:Prumo</c> está ausente ou vazia) — vira 503, MESMO vocabulário de
 /// <c>GET /api/health/db</c> (<see cref="Data.DatabaseHealthProbe"/>). Qualquer outra exceção não
 /// tratada vira 500 genérico.
 /// </para>
 ///
 /// <para>
-/// Checar por <see cref="Exception.Source"/> em vez da mensagem (<c>ex.Message</c>) é deliberado: a
-/// mensagem muda de um <see cref="InvalidOperationException"/> do Npgsql para outro (conexão já
-/// aberta, texto de comando ausente, etc.), mas <see cref="Exception.Source"/> é estável — é o nome do
-/// assembly que lançou a exceção, atribuído pelo runtime a partir do stack trace, não um texto livre
-/// sujeito a mudar de versão para versão nem a variar por cultura. Isso também é o que impede um
-/// <see cref="InvalidOperationException"/> lançado por CÓDIGO DESTA API (ex.:
+/// <b>A cadeia INTEIRA de <see cref="Exception.InnerException"/> é verificada, não só a exceção de
+/// topo (achado do review do ciclo 1, MET-530).</b> Confirmado ao vivo (Postgres real, porta fechada,
+/// via <see cref="Data.PrumoDbContext"/> com a MESMA chamada de <c>UseNpgsql(...)</c> que
+/// <c>Program.cs</c> usa, sem <c>EnableRetryOnFailure</c>): o <c>ExecutionStrategy</c> do provider
+/// Npgsql para EF Core embrulha QUALQUER falha "provavelmente transitória" (conexão recusada, timeout,
+/// rede caindo) num <see cref="InvalidOperationException"/> cujo <see cref="Exception.Source"/> é
+/// <c>"Npgsql.EntityFrameworkCore.PostgreSQL"</c> — NÃO <c>"Npgsql"</c> — com o
+/// <c>Npgsql.NpgsqlException</c> REAL (um <see cref="DbException"/>) um nível abaixo, em
+/// <see cref="Exception.InnerException"/>. Checar só a exceção de topo classificava esse caso (banco
+/// fora do ar) como 500 genérico — o OPOSTO do que a spec pede — enquanto senha errada (cujo
+/// <c>PostgresException</c> já chega no topo) virava 503 corretamente; as duas rotas
+/// (<c>GET /api/health/db</c> e qualquer rota que toque o banco) discordavam no MESMO processo.
+/// Percorrer a cadeia inteira resolve os dois: encontra o <see cref="DbException"/> não importa em que
+/// profundidade ele esteja embrulhado. Pela mesma razão, cobre também o caso equivalente do M2
+/// (<c>DbUpdateException</c> embrulhando um <c>PostgresException</c> de violação de
+/// <c>EXCLUDE</c>/<c>UNIQUE</c>) — <c>DbUpdateException</c> não é <see cref="DbException"/> nem
+/// <see cref="InvalidOperationException"/>, mas o <c>PostgresException</c> no seu
+/// <see cref="Exception.InnerException"/> é encontrado do mesmo jeito. (Isso NÃO decide o STATUS
+/// correto para esse caso do M2 — uma violação de agenda dupla é um conflito de negócio, não
+/// necessariamente "serviço indisponível"; ver "Issues" no relatório desta task. Este handler
+/// continua sendo a rede de segurança para o que NINGUÉM tratou explicitamente antes.)
+/// </para>
+///
+/// <para>
+/// Checar por <see cref="Exception.Source"/> em vez da mensagem (<c>ex.Message</c>) continua
+/// deliberado: a mensagem muda de um <see cref="InvalidOperationException"/> do Npgsql para outro
+/// (conexão já aberta, texto de comando ausente, etc.), mas <see cref="Exception.Source"/> é estável —
+/// é o nome do assembly que lançou a exceção, atribuído pelo runtime a partir do stack trace, não um
+/// texto livre sujeito a mudar de versão para versão nem a variar por cultura. Isso também é o que
+/// impede um <see cref="InvalidOperationException"/> lançado por CÓDIGO DESTA API (ex.:
 /// <c>SearchEndpoints.MapEmbeddingMode</c>) de ser confundido com falha de banco: o
-/// <see cref="Exception.Source"/> desse caso é o assembly desta API, nunca <c>"Npgsql"</c>.
+/// <see cref="Exception.Source"/> desse caso é o assembly desta API, nunca <c>"Npgsql"</c> — em
+/// nenhum nível da cadeia.
 /// </para>
 ///
 /// <para>
 /// O detalhe real (tipo, mensagem, stack trace) vai só para o <see cref="ILogger"/> do servidor — NUNCA
 /// para o corpo HTTP — e a connection string em si nunca é logada (nem aqui, nem em nenhum outro ponto
 /// desta API).
+/// </para>
+///
+/// <para>
+/// <b>Conhecido e deliberado (achado do review do ciclo 1): <c>Accept:</c> incompatível com JSON vira
+/// corpo VAZIO, não erro.</b> Se o cliente manda um cabeçalho <c>Accept</c> que nenhum
+/// <see cref="Microsoft.AspNetCore.Http.IProblemDetailsWriter"/> registrado aceita (ex.:
+/// <c>Accept: text/html</c> — nenhum navegador real nem cliente HTTP comum faz isso contra uma API
+/// JSON, mas é alcançável por um cliente HTTP direto), <see cref="IProblemDetailsService.TryWriteAsync"/>
+/// devolve <see langword="false"/> e NADA é escrito: a resposta fica só com o status code certo
+/// (503/500) e <c>Content-Length: 0</c>. NÃO é uma vazão — não há HTML de dev page nem nenhum outro
+/// corpo — é só "nada mais pôde ser negociado". Este handler devolve <see langword="true"/> de
+/// qualquer forma nesse caso (ver comentário em <see cref="TryHandleAsync"/>): sem isso,
+/// <c>ExceptionHandlerMiddlewareImpl</c> entende que NINGUÉM tratou a exceção, tenta escrever de novo
+/// sozinho (mesma negociação, mesma falha) e loga a MESMA exceção uma segunda vez, na categoria
+/// <c>Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware</c> — confirmado ao vivo (decompilado
+/// o middleware real) e corrigido devolvendo sempre <see langword="true"/>.
 /// </para>
 /// </summary>
 public sealed class GlobalExceptionHandler(
@@ -111,14 +149,56 @@ public sealed class GlobalExceptionHandler(
         // duplicadas aqui. Exception da ProblemDetailsContext fica de propósito sem preencher: nenhum
         // IProblemDetailsWriter registrado nesta API a serializa (DefaultProblemDetailsWriter não o
         // faz — só popularia risco à toa para um writer futuro que decidisse fazê-lo).
-        return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
+        await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
             ProblemDetails = problemDetails,
         }).ConfigureAwait(false);
+
+        // SEMPRE true, mesmo quando TryWriteAsync acima devolve false (achado do review do ciclo 1,
+        // "log duplicado"): TryWriteAsync só devolve false quando NENHUM IProblemDetailsWriter aceita
+        // negociar o Accept: da requisição (ex.: Accept: text/html) — StatusCode já foi setado acima e
+        // o LogError já aconteceu; não há mais nada de útil a tentar. Devolver o bool de TryWriteAsync
+        // direto fazia ExceptionHandlerMiddlewareImpl tratar isto como "handler NÃO tratou" nesse caso:
+        // tentava escrever de novo sozinho (com a MESMA negociação de conteúdo, mesma falha) e depois
+        // logava "An unhandled exception has occurred" na categoria
+        // Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware — um segundo log para a MESMA
+        // exceção que este handler já logou acima. Confirmado ao vivo (decompilando
+        // ExceptionHandlerMiddlewareImpl.HandleException: `flag = result == ExceptionHandledType.ExceptionHandlerService`
+        // só fica true quando TryHandleAsync devolve true; sem isso, `!flag` libera
+        // DiagnosticsTelemetry.ReportUnhandledException). O corpo continua vazio (Content-Length: 0)
+        // nesse cenário raríssimo (nenhum cliente HTTP comum nega JSON) — sem vazamento nenhum, é
+        // apenas "nada mais pôde ser escrito"; ver GlobalExceptionHandlerTests para a cobertura.
+        return true;
     }
 
-    private static bool IsDatabaseInfrastructureFailure(Exception exception) => exception switch
+    /// <summary>
+    /// Limite defensivo de profundidade — nenhuma cadeia real de <see cref="Exception.InnerException"/>
+    /// chega perto disso (a mais funda observada nesta task, EF Core → Npgsql → Socket, tem 3 níveis);
+    /// existe só para nunca girar indefinidamente se algum dia uma exceção customizada formar um ciclo.
+    /// </summary>
+    private const int MaxInnerExceptionDepth = 20;
+
+    /// <summary>
+    /// Percorre <paramref name="exception"/> e toda a cadeia de <see cref="Exception.InnerException"/>
+    /// (ver XML-doc da classe, achado do review do ciclo 1) — não só o nível de topo.
+    /// </summary>
+    private static bool IsDatabaseInfrastructureFailure(Exception exception)
+    {
+        var current = exception;
+
+        for (var depth = 0; current is not null && depth < MaxInnerExceptionDepth; depth++, current = current.InnerException)
+        {
+            if (IsDatabaseInfrastructureFailureAtThisLevel(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsDatabaseInfrastructureFailureAtThisLevel(Exception exception) => exception switch
     {
         DbException => true,
         InvalidOperationException => string.Equals(exception.Source, NpgsqlAssemblyName, StringComparison.Ordinal),
