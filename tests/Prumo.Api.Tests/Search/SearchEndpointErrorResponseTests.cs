@@ -1,9 +1,12 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 
 using Prumo.Api.Embeddings;
+using Prumo.Api.Search;
 using Prumo.Api.Search.QueryEmbedding;
 
 namespace Prumo.Api.Tests.Search;
@@ -17,7 +20,8 @@ namespace Prumo.Api.Tests.Search;
 /// dá controle total sobre o modo/exceção devolvidos, sem precisar simular HTTP (a garantia "mensagem
 /// segura" da exceção já é de T5, <c>SearchQueryEmbedderTests</c>, "não vaza segredo"; aqui o que se
 /// prova é que O ENDPOINT mapeia essa exceção para 502 sem alterar nem esconder a mensagem). Nenhum
-/// teste aqui usa rede nem Docker.
+/// teste aqui usa rede nem Docker — o 502 (ver <see cref="GetProviderFailureDetailFromAClosedPortAsync"/>)
+/// usa a cadeia REAL contra uma porta LOCAL fechada, não um servidor remoto.
 /// </summary>
 public sealed class SearchEndpointErrorResponseTests
 {
@@ -46,7 +50,7 @@ public sealed class SearchEndpointErrorResponseTests
         // explica a demo e aponta as consultas de demonstração), não a string literal antiga.
         var detail = document.RootElement.GetProperty("detail").GetString();
         Assert.Contains("consultas de demonstração", detail, StringComparison.OrdinalIgnoreCase);
-        AssertNoServerConfigurationVocabulary(detail);
+        AssertNoServerConfigurationVocabulary(detail, nameof(GetSearch_WhenEmbeddingIsUnavailable_Returns422WithExampleQueriesFromTheStore_RespectingTheLimit));
 
         var exampleQueries = document.RootElement.GetProperty("exampleQueries")
             .EnumerateArray().Select(entry => entry.GetString()).ToList();
@@ -146,45 +150,92 @@ public sealed class SearchEndpointErrorResponseTests
     }
 
     /// <summary>
-    /// MET-529 — regressão de CLASSE, não só dos dois casos que motivaram a correção: percorre os
-    /// quatro caminhos de erro conhecidos de <c>GET /api/search</c> (400 antes de qualquer I/O, os
-    /// dois sub-casos de 422, e um 502 produzido pela cadeia REAL <see cref="SearchQueryEmbedder"/> +
-    /// <c>OpenAiCompatibleEmbeddingProvider</c> contra uma porta local fechada — sem chamada de rede
-    /// de verdade, mesma técnica da verificação ao vivo com <c>curl</c> do relatório desta task) e
-    /// reprova qualquer <c>detail</c> que contenha vocabulário de CONFIGURAÇÃO DE SERVIDOR: nome de
-    /// variável de ambiente ou par <c>Chave=valor</c> (<c>Embeddings__</c>, <c>Embeddings:</c>,
-    /// <c>Provider=</c>). É o que impede uma TERCEIRA ocorrência desta CLASSE de defeito — não só os
-    /// dois pontos já corrigidos — de escapar sem ser pega aqui.
+    /// MET-529 (ciclo 2 do review) — regressão de CLASSE, não só dos casos que motivaram a correção.
+    /// <see cref="ErrorPaths"/> percorre TODO ramo de <see cref="SearchRequestValidator.Validate"/> —
+    /// a MESMA lista de 14 requisições que
+    /// <see cref="SearchRequestValidationTests.InvalidRequestsCoveringEveryPathOfTheValidator"/> usa
+    /// para provar "sempre 400" (REUSADA, não duplicada: um ramo novo do validador passa a entrar nos
+    /// dois testes ao acrescentar uma linha só lá) —, o fallback de
+    /// <see cref="SearchEndpoints.ConfigureProblemDetails"/> (inalcançável pelos cinco parâmetros
+    /// desta rota hoje, MET-526, mas testado DIRETO como defesa — ver
+    /// <see cref="GetFrameworkBindingFallbackDetailAsync"/>), os dois sub-casos de 422, e um 502
+    /// produzido pela cadeia REAL <see cref="SearchQueryEmbedder"/> + <c>OpenAiCompatibleEmbeddingProvider</c>
+    /// contra uma porta local fechada (ver <see cref="GetProviderFailureDetailFromAClosedPortAsync"/>).
+    ///
+    /// <para>
+    /// <b>Prova de mutação (achado do Reviewer, ciclo 1):</b> a versão anterior deste teste exercitava
+    /// só 4 requisições fixas — um vazamento reintroduzido no <c>detail</c> do 400 de <c>radiusKm</c>
+    /// fracionário (<c>SearchEndpoints.cs</c>, mensagem de <see cref="SearchRequestValidator"/>,
+    /// <c>GetSearch_WithFractionalRadiusKm_...</c> em <see cref="SearchRequestValidationTests"/>)
+    /// passava com a suíte inteira verde (338/338). Esta versão cobre TODO ramo do validador — a
+    /// mesma mutação agora derruba o caso <c>"400: /api/search?q=...&amp;radiusKm=0.1"</c> desta
+    /// <see cref="Theory"/> (reproduzido e confirmado no relatório desta task).
+    /// </para>
     /// </summary>
-    [Fact]
-    public async Task GetSearch_AcrossEveryKnownErrorPath_NeverLeaksServerConfigurationVocabularyInTheDetail()
+    [Theory]
+    [MemberData(nameof(ErrorPaths))]
+    public async Task GetSearch_AcrossEveryKnownErrorPath_NeverLeaksServerConfigurationVocabularyInTheDetail(
+        string caseName, Func<Task<string?>> getDetailAsync)
     {
-        var invalidRequestDetail = await GetDetailAsync(
-            "/api/search?q=t", // 400: q abaixo do mínimo — nem chega a embedar.
-            new FakeSearchQueryEmbedder(new SearchQueryEmbeddingProviderException(
-                "não deveria ser chamado: 400 acontece antes de qualquer I/O (design.md §6, passo 1)")));
+        var detail = await getDetailAsync();
 
-        var noPrecomputedVectorDetail = await GetDetailAsync(
-            "/api/search?q=meu+portao+nao+abre",
-            new FakeSearchQueryEmbedder(new QueryEmbeddingResult(
-                Vector: null, QueryEmbeddingMode.Unavailable, ModelId: null,
-                QueryEmbeddingUnavailableReason.NoPrecomputedVector)));
-
-        var noUsableTokensDetail = await GetDetailAsync(
-            "/api/search?q=tv",
-            new FakeSearchQueryEmbedder(new QueryEmbeddingResult(
-                Vector: null, QueryEmbeddingMode.Unavailable, ModelId: null,
-                QueryEmbeddingUnavailableReason.NoUsableTokensForHashing)));
-
-        var providerFailureDetail = await GetDetailAsync(
-            "/api/search?q=vazamento+no+banheiro",
-            BuildRealEmbedderPointedAtAClosedPort());
-
-        AssertNoServerConfigurationVocabulary(invalidRequestDetail);
-        AssertNoServerConfigurationVocabulary(noPrecomputedVectorDetail);
-        AssertNoServerConfigurationVocabulary(noUsableTokensDetail);
-        AssertNoServerConfigurationVocabulary(providerFailureDetail);
+        AssertNoServerConfigurationVocabulary(detail, caseName);
     }
+
+    /// <summary>18 casos: os 14 ramos de <see cref="SearchRequestValidator.Validate"/>, o fallback de binding, os dois sub-casos de 422, e o 502.</summary>
+    public static IEnumerable<object[]> ErrorPaths()
+    {
+        foreach (var row in SearchRequestValidationTests.InvalidRequestsCoveringEveryPathOfTheValidator())
+        {
+            var requestUri = (string)row[0];
+
+            yield return new object[]
+            {
+                $"400: {requestUri}",
+                (Func<Task<string?>>)(() => GetDetailAsync(requestUri, NeverCalledEmbedder())),
+            };
+        }
+
+        yield return new object[]
+        {
+            "400: fallback de framework binding (SearchEndpoints.ConfigureProblemDetails)",
+            (Func<Task<string?>>)GetFrameworkBindingFallbackDetailAsync,
+        };
+
+        yield return new object[]
+        {
+            "422: NoPrecomputedVector",
+            (Func<Task<string?>>)(() => GetDetailAsync(
+                "/api/search?q=meu+portao+nao+abre",
+                new FakeSearchQueryEmbedder(new QueryEmbeddingResult(
+                    Vector: null, QueryEmbeddingMode.Unavailable, ModelId: null,
+                    QueryEmbeddingUnavailableReason.NoPrecomputedVector)))),
+        };
+
+        yield return new object[]
+        {
+            "422: NoUsableTokensForHashing",
+            (Func<Task<string?>>)(() => GetDetailAsync(
+                "/api/search?q=tv",
+                new FakeSearchQueryEmbedder(new QueryEmbeddingResult(
+                    Vector: null, QueryEmbeddingMode.Unavailable, ModelId: null,
+                    QueryEmbeddingUnavailableReason.NoUsableTokensForHashing)))),
+        };
+
+        yield return new object[]
+        {
+            "502: provedor real (OpenAiCompatibleEmbeddingProvider) contra porta local fechada",
+            (Func<Task<string?>>)GetProviderFailureDetailFromAClosedPortAsync,
+        };
+    }
+
+    /// <summary>
+    /// Reprova qualquer requisição que chegue a chamar o embedder — usada nos 14 ramos de 400, onde o
+    /// handler nunca deveria passar do passo 1 (validação, design.md §6) para o passo 2 (embedar).
+    /// </summary>
+    private static FakeSearchQueryEmbedder NeverCalledEmbedder() =>
+        new(new SearchQueryEmbeddingProviderException(
+            "não deveria ser chamado: 400 acontece antes de qualquer I/O (design.md §6, passo 1)"));
 
     /// <summary>Sobe o host mínimo, chama <paramref name="requestUri"/> e devolve <c>detail</c> (ou <see langword="null"/> se ausente).</summary>
     private static async Task<string?> GetDetailAsync(string requestUri, ISearchQueryEmbedder embedder)
@@ -202,38 +253,81 @@ public sealed class SearchEndpointErrorResponseTests
     }
 
     /// <summary>
+    /// Invoca <see cref="SearchEndpoints.ConfigureProblemDetails"/> DIRETO, sem HTTP: o ramo de
+    /// binding-failure do framework (MET-526, XML-doc de <see cref="SearchRequestValidator"/>) não é
+    /// mais alcançável pelos cinco parâmetros desta rota (todos <c>string?</c> desde a MET-526), mas
+    /// continua no código como defesa genérica — e precisa continuar sem vocabulário de configuração
+    /// se algum parâmetro futuro reintroduzir um tipo primitivo e reativar este caminho.
+    /// </summary>
+    private static Task<string?> GetFrameworkBindingFallbackDetailAsync()
+    {
+        var options = new ProblemDetailsOptions();
+        SearchEndpoints.ConfigureProblemDetails(options);
+
+        var context = new ProblemDetailsContext { HttpContext = new DefaultHttpContext() };
+        context.ProblemDetails.Status = StatusCodes.Status400BadRequest;
+        context.ProblemDetails.Title = "Microsoft.AspNetCore.Http.BadHttpRequestException";
+        context.ProblemDetails.Detail = "Failed to bind parameter \"Int32 radiusKm\" from \"0.1\".";
+
+        options.CustomizeProblemDetails!(context);
+
+        return Task.FromResult<string?>(context.ProblemDetails.Detail);
+    }
+
+    /// <summary>
     /// Cadeia REAL (não <see cref="FakeSearchQueryEmbedder"/>) para o 502: <see cref="SearchQueryEmbedder"/>
     /// com um <c>OpenAiCompatibleEmbeddingProvider</c> apontado para uma porta LOCAL fechada
     /// (<c>127.0.0.1:1</c> — sem listener nenhum, sem custo, sem rede de verdade) produz uma falha de
     /// conexão genuína; o <c>detail</c> final é exatamente o que os dois tipos reais compõem em
-    /// produção, não uma string fabricada à mão neste teste.
+    /// produção, não uma string fabricada à mão neste teste. <c>HttpClient</c> em <c>using</c> local
+    /// (nit do review, ciclo 2): descartado ao fim desta chamada, não antes — a chamada HTTP acontece
+    /// dentro dela, via <see cref="GetDetailAsync"/>.
     /// </summary>
-    private static ISearchQueryEmbedder BuildRealEmbedderPointedAtAClosedPort()
+    private static async Task<string?> GetProviderFailureDetailFromAClosedPortAsync()
     {
-        var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
         var providerOptions = new OpenAiCompatibleEmbeddingProviderOptions
         {
             BaseUrl = "http://127.0.0.1:1/v1",
             Model = "test-model",
         };
         var provider = new OpenAiCompatibleEmbeddingProvider(httpClient, providerOptions);
-
-        return new SearchQueryEmbedder(
+        var embedder = new SearchQueryEmbedder(
             PrecomputedEmbeddingStore.Empty(), provider, EmbeddingProviderRegistration.OpenAiCompatibleProviderName);
+
+        return await GetDetailAsync("/api/search?q=vazamento+no+banheiro", embedder);
     }
 
     /// <summary>
-    /// MET-529 — a régua desta task: nenhum <c>detail</c> pode citar vocabulário de CONFIGURAÇÃO DE
-    /// SERVIDOR, mesmo que ainda cite status HTTP, endpoint ou o nome do provedor (<c>openai-compatible</c>),
-    /// que a spec sanciona/não veda (spec.md, tabela de erros — "status e endpoint, jamais chave,
-    /// cabeçalho ou corpo").
+    /// MET-529 (ciclo 2) — a régua desta task, ALARGADA pelo review: nenhum <c>detail</c> pode citar a
+    /// CHAVE <c>Embeddings.Provider</c> em nenhuma forma comum de separador/caixa
+    /// (<c>Embeddings__Provider</c>, <c>Embeddings:Provider</c>, <c>Embeddings.Provider</c>,
+    /// <c>EMBEDDINGS_PROVIDER</c>, <c>embeddings-provider</c>...) nem um par <c>Chave=valor</c>
+    /// genérico (<c>Provider=...</c>) — mesmo que ainda cite status HTTP, endpoint ou o nome do
+    /// provedor (<c>openai-compatible</c>), que a spec sanciona/não veda (spec.md, tabela de erros —
+    /// "status e endpoint, jamais chave, cabeçalho ou corpo").
+    ///
+    /// <para>
+    /// <b>O que esta régua alcança:</b> variações de FORMA da MESMA chave (separador e caixa
+    /// diferentes) e o padrão genérico <c>Chave=valor</c>. <b>O que ela NÃO alcança</b> (deliberado —
+    /// perseguir exaustividade contra prosa livre é perseguição impossível, review ciclo 2): uma frase
+    /// sem o token "Provider" ao lado de "Embeddings", como "defina a variável de ambiente do
+    /// provedor de embeddings", passaria sem ser pega por esta régua automatizada; revisão humana
+    /// continua sendo a defesa contra paráfrase.
+    /// </para>
     /// </summary>
-    private static void AssertNoServerConfigurationVocabulary(string? detail)
+    private static readonly Regex ConfigurationKeyRegex =
+        new(@"Embeddings[_:.\-]{1,2}Provider", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static void AssertNoServerConfigurationVocabulary(string? detail, string caseName)
     {
-        Assert.NotNull(detail);
-        Assert.DoesNotContain("Embeddings__", detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("Embeddings:", detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("Provider=", detail, StringComparison.Ordinal);
+        Assert.True(detail is not null, $"[{caseName}] detail nulo — esperava um `detail` presente.");
+        Assert.False(
+            ConfigurationKeyRegex.IsMatch(detail!),
+            $"[{caseName}] detail cita a chave de configuração 'Embeddings.Provider' (alguma forma): \"{detail}\".");
+        Assert.False(
+            detail!.Contains("Provider=", StringComparison.Ordinal),
+            $"[{caseName}] detail cita um par Chave=valor de configuração ('Provider='): \"{detail}\".");
     }
 
     // ---- artefato pré-computado de teste --------------------------------------------------------
