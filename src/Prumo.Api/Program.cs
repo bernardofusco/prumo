@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 using Prumo.Api.Data;
 using Prumo.Api.Embeddings;
+using Prumo.Api.ErrorHandling;
 using Prumo.Api.Search;
 using Prumo.Api.Search.QueryEmbedding;
 using Prumo.Api.Search.Ranking;
@@ -37,6 +38,14 @@ if (builder.Configuration[EmbeddingProviderRegistration.ProviderConfigurationKey
 // DeveloperExceptionPageMiddleware do ASP.NET Core anexava uma extensão "exception" com stack trace
 // completo. Ver XML-doc de SearchEndpoints.ConfigureProblemDetails para os dois.
 builder.Services.AddProblemDetails(SearchEndpoints.ConfigureProblemDetails);
+
+// Tratamento global de exceção (MET-530): GlobalExceptionHandler classifica falha de infraestrutura
+// de banco (503, mesmo vocabulário de /api/health/db) vs. qualquer outra exceção não tratada (500) —
+// nunca tipo .NET, mensagem de provider nem stack trace no corpo, em nenhum ambiente. Ativado logo
+// abaixo (app.UseExceptionHandler()), como a PRIMEIRA linha depois de builder.Build(): ver XML-doc de
+// GlobalExceptionHandler para o porquê da ordem (suprime o DeveloperExceptionPageMiddleware que o
+// próprio ASP.NET Core adiciona automaticamente em Development, em vez de tentar correr atrás dele).
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Acesso a dados via EF Core (ADR-001): connection string só por configuração
 // (ConnectionStrings__Prumo, ver .env.example), nunca hardcoded. Sem Migrations do EF — schema é
@@ -81,6 +90,12 @@ builder.Services.AddSearchQueryEmbedding(builder.Configuration);
 builder.Services.AddScoped<IProfessionalSearchQuery, ProfessionalSearchQuery>();
 
 var app = builder.Build();
+
+// PRIMEIRA linha depois de builder.Build(), de propósito (MET-530, XML-doc de GlobalExceptionHandler):
+// confirmado ao vivo que isto faz o ExceptionHandlerMiddleware capturar qualquer exceção não tratada
+// ANTES do DeveloperExceptionPageMiddleware auto-adicionado pelo ASP.NET Core em Development — não
+// depois dele, nem condicionado a IsDevelopment()/IsProduction() (a garantia da spec vale sempre).
+app.UseExceptionHandler();
 
 var api = app.MapGroup("/api");
 
