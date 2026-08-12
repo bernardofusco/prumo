@@ -139,6 +139,46 @@ public sealed class AgendaSchemaConstraintsTests(PostgresIntegrationFixture fixt
         }
     }
 
+    /// <summary>
+    /// Guarda de mutação da tese central do M2 (spec.md D4): <c>UNIQUE (slot_id)</c> sozinho em
+    /// <c>reservations</c> é PROIBIDA. Se ela existisse, a corrida de N clientes no mesmo slot
+    /// estouraria <c>23505</c> (unique_violation) ANTES do <c>23P01</c> da EXCLUDE — a defesa
+    /// oficial do case (constraint de exclusão sobre o intervalo) perderia o protagonismo e o
+    /// teste de carga passaria a provar outra coisa (idempotência de slot, não exclusão de
+    /// overlap). A <c>UNIQUE (client_key, slot_id)</c> — legítima, só para idempotência — tem
+    /// DUAS colunas e não é pega por este teste; só uma UNIQUE/índice único de UMA coluna
+    /// (<c>slot_id</c> isolado) faria esta asserção falhar. Consulta <c>pg_index</c> (não só
+    /// <c>pg_constraint</c>) para pegar tanto uma <c>UNIQUE</c> nomeada quanto um
+    /// <c>CREATE UNIQUE INDEX</c> avulso sobre a mesma coluna — qualquer um dos dois caminhos
+    /// falsificaria a tese do case do mesmo jeito. Mesmo padrão de
+    /// <see cref="SchemaIndexesTests.NoIndexExistsOverEmbeddingColumn"/> (afirmar ausência, não só
+    /// "não lançou").
+    /// </summary>
+    [Fact]
+    public async Task NoSingleColumnUniqueConstraintExistsOnSlotIdAlone()
+    {
+        await using var connection = await OpenConnectionAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*)
+            FROM pg_index i
+            WHERE i.indrelid = 'public.reservations'::regclass
+              AND i.indisunique
+              AND cardinality(i.indkey) = 1
+              AND i.indkey[0] = (
+                  SELECT attnum
+                  FROM pg_attribute
+                  WHERE attrelid = 'public.reservations'::regclass
+                    AND attname = 'slot_id'
+              );
+            """;
+
+        var singleColumnUniqueOnSlotIdCount = (long)(await command.ExecuteScalarAsync())!;
+
+        Assert.Equal(0, singleColumnUniqueOnSlotIdCount);
+    }
+
     // ---- reservations: CHECK isempty(period) ----------------------------------------------------
 
     [Fact]
@@ -287,6 +327,13 @@ public sealed class AgendaSchemaConstraintsTests(PostgresIntegrationFixture fixt
                 {
                     var secondSlotId = await InsertSlotAsync(
                         connection, professionalId, BaseInstant.AddHours(1), BaseInstant.AddHours(2));
+
+                    // As duas linhas de fato COEXISTEM — não basta o segundo INSERT "não lançar";
+                    // uma EXCLUDE grosseira demais (ex.: usando '[]' em vez de '[)') poderia rejeitar
+                    // o segundo insert silenciosamente sob outra causa, ou um bug no teste poderia
+                    // mascarar uma linha que nunca foi de fato gravada.
+                    var slotCount = await CountSlotsForProfessionalAsync(connection, professionalId);
+                    Assert.Equal(2, slotCount);
 
                     await DeleteSlotAsync(connection, secondSlotId);
                 }
@@ -481,6 +528,15 @@ public sealed class AgendaSchemaConstraintsTests(PostgresIntegrationFixture fixt
         command.Parameters.Add(TimestampParameter("start", start));
         command.Parameters.Add(TimestampParameter("end", end));
         command.Parameters.AddWithValue("source", source);
+
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<long> CountSlotsForProfessionalAsync(NpgsqlConnection connection, long professionalId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM availability_slots WHERE professional_id = @professional_id;";
+        command.Parameters.AddWithValue("professional_id", professionalId);
 
         return (long)(await command.ExecuteScalarAsync())!;
     }
