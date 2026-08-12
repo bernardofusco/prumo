@@ -282,6 +282,21 @@ public sealed class SearchEndpointErrorResponseTests
     /// produção, não uma string fabricada à mão neste teste. <c>HttpClient</c> em <c>using</c> local
     /// (nit do review, ciclo 2): descartado ao fim desta chamada, não antes — a chamada HTTP acontece
     /// dentro dela, via <see cref="GetDetailAsync"/>.
+    ///
+    /// <para>
+    /// <b>Limite explícito (review, ciclo 2):</b> <c>OpenAiCompatibleEmbeddingProvider</c> produz
+    /// CINCO formas de mensagem de erro — falha de rede (esta, a única que passa pelo <c>GET
+    /// /api/search</c> real ponta a ponta aqui), erro HTTP (401/500...), timeout, resposta malformada
+    /// (<c>BuildMalformedResponseMessage</c>) e dimensão errada do vetor
+    /// (<c>EmbeddingDefaults.ValidateDimensions</c>). Cobrir as outras quatro EXIGIRIA um servidor
+    /// HTTP de verdade nesta cadeia (infraestrutura nova, fora do escopo desta correção) — elas são
+    /// cobertas em vez disso, com a MESMA régua, direto contra o provider (sem o round-trip HTTP da
+    /// rota), em <c>OpenAiCompatibleEmbeddingProviderTests</c>
+    /// (<c>EmbedAsync_ThrowsAnErrorCitingTheHttpStatus_...</c>,
+    /// <c>EmbedAsync_ThrowsAnActionableError_WhenTheHttpClientTimesOut</c>,
+    /// <c>EmbedAsync_ThrowsAnActionableError_WhenTheServerResponseIsMissingData</c>,
+    /// <c>EmbedAsync_ThrowsAnActionableError_WhenTheServerReturnsAVectorWithTheWrongDimension</c>).
+    /// </para>
     /// </summary>
     private static async Task<string?> GetProviderFailureDetailFromAClosedPortAsync()
     {
@@ -299,32 +314,56 @@ public sealed class SearchEndpointErrorResponseTests
     }
 
     /// <summary>
-    /// MET-529 (ciclo 2) — a régua desta task, ALARGADA pelo review: nenhum <c>detail</c> pode citar a
-    /// CHAVE <c>Embeddings.Provider</c> em nenhuma forma comum de separador/caixa
-    /// (<c>Embeddings__Provider</c>, <c>Embeddings:Provider</c>, <c>Embeddings.Provider</c>,
-    /// <c>EMBEDDINGS_PROVIDER</c>, <c>embeddings-provider</c>...) nem um par <c>Chave=valor</c>
-    /// genérico (<c>Provider=...</c>) — mesmo que ainda cite status HTTP, endpoint ou o nome do
-    /// provedor (<c>openai-compatible</c>), que a spec sanciona/não veda (spec.md, tabela de erros —
-    /// "status e endpoint, jamais chave, cabeçalho ou corpo").
+    /// MET-529 (ciclo 3 do review) — a régua desta task. Cobre qualquer CHAVE da seção de
+    /// configuração <c>Embeddings</c> (não só <c>Provider</c> — achado do review, ciclo 2: a forma
+    /// anterior só reconhecia <c>Embeddings.Provider</c> e deixava passar <c>Embeddings__BaseUrl</c>,
+    /// <c>Embeddings__Model</c>, <c>Embeddings__ApiKey</c> — <c>ApiKey</c> é o nome da variável do
+    /// SEGREDO — e <c>Embeddings:PrecomputedPaths</c>), em qualquer forma comum de separador/caixa
+    /// (<c>Embeddings__BaseUrl</c>, <c>Embeddings:PrecomputedPaths</c>, <c>EMBEDDINGS_APIKEY</c>,
+    /// <c>embeddings-provider</c>...), mais o par <c>Chave=valor</c> genérico (<c>Provider=...</c>) —
+    /// mesmo que o <c>detail</c> ainda cite status HTTP, endpoint ou o nome do provedor
+    /// (<c>openai-compatible</c>), que a spec sanciona/não veda (spec.md, tabela de erros — "status e
+    /// endpoint, jamais chave, cabeçalho ou corpo").
     ///
     /// <para>
-    /// <b>O que esta régua alcança:</b> variações de FORMA da MESMA chave (separador e caixa
-    /// diferentes) e o padrão genérico <c>Chave=valor</c>. <b>O que ela NÃO alcança</b> (deliberado —
-    /// perseguir exaustividade contra prosa livre é perseguição impossível, review ciclo 2): uma frase
-    /// sem o token "Provider" ao lado de "Embeddings", como "defina a variável de ambiente do
-    /// provedor de embeddings", passaria sem ser pega por esta régua automatizada; revisão humana
-    /// continua sendo a defesa contra paráfrase.
+    /// <b>Separador <c>.</c> DELIBERADAMENTE de fora, achado do review ciclo 3:</b> a primeira forma
+    /// deste regex (ciclo 2) incluía <c>.</c> no conjunto de separadores e produzia falso positivo —
+    /// o endpoint de TESTE <c>http://fake-embeddings.test/v1/embeddings</c>, usado em dezenas de
+    /// casos legítimos deste projeto, contém literalmente <c>embeddings.test</c> (o host termina no
+    /// TLD reservado para teste, RFC 2606), que o padrão com <c>.</c> reconhecia como
+    /// "Embeddings" + separador + chave "test". Nenhuma das formas exigidas
+    /// (<c>Embeddings__X</c>, <c>Embeddings:X</c>, <c>EMBEDDINGS_X</c>) precisa do ponto — só
+    /// sublinhado, dois-pontos e hífen, os três separadores reais usados por esta configuração
+    /// (variável de ambiente, <c>appsettings.json</c>/<c>IConfiguration</c>, e a variante hífen que a
+    /// régua também cobre por precaução).
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Sem falso positivo contra os 18 casos atuais + as mensagens de
+    /// <c>OpenAiCompatibleEmbeddingProviderTests</c> (reverificado após a correção do ciclo 3):</b> o
+    /// padrão exige um separador de <c>[_:\-]</c> IMEDIATAMENTE após "Embeddings" — nem espaço
+    /// ("...provedor de embeddings openai-compatible...", "...API de embeddings da OpenAI.") nem
+    /// <c>.</c> (o host de teste acima) casam.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>O que esta régua alcança:</b> QUALQUER chave da forma <c>Embeddings</c> + separador
+    /// (<c>_</c>/<c>:</c>/<c>-</c>, 1 ou 2 caracteres) + token — não só <c>Provider</c> — e o padrão
+    /// genérico <c>Chave=valor</c>. <b>O que ela NÃO alcança</b> (deliberado): uma frase sem esse
+    /// padrão, como "defina a variável de ambiente do provedor de embeddings" (sem a chave literal
+    /// colada), ou uma chave separada por <c>.</c> (removido de propósito, ver acima) — passariam sem
+    /// ser pegas por esta régua automatizada; revisão humana continua sendo a defesa contra paráfrase.
     /// </para>
     /// </summary>
     private static readonly Regex ConfigurationKeyRegex =
-        new(@"Embeddings[_:.\-]{1,2}Provider", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        new(@"Embeddings[_:\-]{1,2}\w+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static void AssertNoServerConfigurationVocabulary(string? detail, string caseName)
     {
         Assert.True(detail is not null, $"[{caseName}] detail nulo — esperava um `detail` presente.");
         Assert.False(
             ConfigurationKeyRegex.IsMatch(detail!),
-            $"[{caseName}] detail cita a chave de configuração 'Embeddings.Provider' (alguma forma): \"{detail}\".");
+            $"[{caseName}] detail cita uma chave de configuração da seção Embeddings (alguma forma): \"{detail}\".");
         Assert.False(
             detail!.Contains("Provider=", StringComparison.Ordinal),
             $"[{caseName}] detail cita um par Chave=valor de configuração ('Provider='): \"{detail}\".");
