@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 using Prumo.Api.Embeddings;
 
@@ -11,6 +12,17 @@ namespace Prumo.Api.Tests.Embeddings;
 /// TODOS os testes usam <see cref="StubHttpMessageHandler"/> — ZERO rede, nunca <c>api.openai.com</c>
 /// nem <c>localhost:1234</c> (regra explícita da task). O grupo mais importante é o de vazamento de
 /// segredo: o repo é público e este é o único código do projeto que toca credencial.
+///
+/// <para>
+/// <b>MET-529 (ciclo 3):</b> este provider produz CINCO formas de mensagem de erro — erro HTTP,
+/// falha de rede, timeout, resposta malformada e dimensão errada do vetor — e nenhuma pode citar
+/// vocabulário de CONFIGURAÇÃO DE SERVIDOR (<see cref="AssertNoServerConfigurationVocabulary"/>,
+/// mesma régua e mesmo limite declarado de
+/// <c>SearchEndpointErrorResponseTests.AssertNoServerConfigurationVocabulary</c>). O caso 502 da
+/// <c>Theory</c> de classe em <c>SearchEndpointErrorResponseTests</c> só exercita a falha de rede
+/// ponta a ponta (via <c>GET /api/search</c> real); as outras quatro formas são cobertas AQUI, direto
+/// contra o provider, sem precisar de um servidor HTTP de verdade na cadeia da rota.
+/// </para>
 /// </summary>
 public sealed class OpenAiCompatibleEmbeddingProviderTests
 {
@@ -187,6 +199,43 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
 
         Assert.Contains("1024", exception.Message, StringComparison.Ordinal);
         Assert.Contains("10", exception.Message, StringComparison.Ordinal);
+
+        // MET-529 (ciclo 3) — a 5ª forma de mensagem deste provider (EmbeddingDefaults.ValidateDimensions).
+        AssertNoServerConfigurationVocabulary(exception.Message);
+    }
+
+    // ---- Resposta malformada: mensagem sem vazar segredo nem instrução de configuração -------------
+
+    /// <summary>
+    /// <c>BuildMalformedResponseMessage</c> — a forma de mensagem que a <c>Theory</c> de classe de
+    /// <c>SearchEndpointErrorResponseTests</c> NÃO exercita ponta a ponta (ver XML-doc de
+    /// <c>GetProviderFailureDetailFromAClosedPortAsync</c> lá): "data" ausente do corpo é o jeito mais
+    /// barato de disparar este ramo sem quebrar o parsing JSON em si (a API respondeu 200 com um JSON
+    /// válido, só não no formato esperado — o caso mais provável contra um endpoint compatível mal
+    /// implementado).
+    /// </summary>
+    [Fact]
+    public async Task EmbedAsync_ThrowsAnActionableError_WhenTheServerResponseIsMissingData()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => Task.FromResult(JsonResponse(HttpStatusCode.OK, new
+        {
+            unexpected = true,
+        })));
+
+        var provider = CreateProvider(handler, apiKey: null);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.EmbedAsync(["doc"], CancellationToken.None));
+
+        // Positiva primeiro: prova que a mensagem tem conteúdo real (status/endpoint), não é uma
+        // asserção vácua de "não contém X" sobre uma mensagem vazia.
+        Assert.Contains("formato inesperado", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(BaseUrl, exception.Message, StringComparison.Ordinal);
+
+        // MET-529 (ciclo 3) — a forma de mensagem que escapou da suíte inteira no ciclo 2 (achado do
+        // review): mutação nesta mensagem não era pega por nenhum teste, porque a Theory de classe só
+        // exercita a falha de rede.
+        AssertNoServerConfigurationVocabulary(exception.Message);
     }
 
     // ---- Erro HTTP: mensagem com status, sem vazar segredo -----------------------------------------
@@ -206,6 +255,12 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
 
         Assert.Contains("401", exception.Message, StringComparison.Ordinal);
         Assert.Contains(BaseUrl, exception.Message, StringComparison.Ordinal);
+
+        // MET-529: este `Message` vira o `detail` público do 502 de GET /api/search quando chamado
+        // via SearchQueryEmbedder — status/endpoint continuam permitidos (spec.md, tabela de erros),
+        // mas nenhuma instrução de CONFIGURAÇÃO DE SERVIDOR (antes: "Confira Embeddings__BaseUrl,
+        // Embeddings__Model e Embeddings__ApiKey").
+        AssertNoServerConfigurationVocabulary(exception.Message);
     }
 
     [Fact]
@@ -221,6 +276,9 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
 
         Assert.Contains(BaseUrl, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("sk-should-not-appear-either", exception.ToString(), StringComparison.Ordinal);
+
+        // MET-529 — ver comentário equivalente acima.
+        AssertNoServerConfigurationVocabulary(exception.Message);
     }
 
     /// <summary>
@@ -256,6 +314,9 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
         Assert.IsType<TimeoutException>(exception.InnerException!.InnerException);
         Assert.Contains(BaseUrl, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("sk-should-not-appear-in-a-timeout-either", exception.ToString(), StringComparison.Ordinal);
+
+        // MET-529 — ver comentário equivalente em EmbedAsync_ThrowsAnErrorCitingTheHttpStatus_...
+        AssertNoServerConfigurationVocabulary(exception.Message);
     }
 
     /// <summary>
@@ -442,4 +503,40 @@ public sealed class OpenAiCompatibleEmbeddingProviderTests
         {
             Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
         };
+
+    /// <summary>
+    /// MET-529 (ciclo 3) — MESMA régua (e mesmo padrão) de
+    /// <c>SearchEndpointErrorResponseTests.ConfigurationKeyRegex</c>: cobre QUALQUER chave da seção
+    /// <c>Embeddings</c> (não só <c>Provider</c> — achado do review, ciclo 2, sobre a forma anterior
+    /// só reconhecer <c>Embeddings.Provider</c> e deixar passar <c>Embeddings__BaseUrl</c>,
+    /// <c>Embeddings__Model</c>, <c>Embeddings__ApiKey</c>, <c>Embeddings:PrecomputedPaths</c>), em
+    /// qualquer forma comum de separador/caixa, mais o par <c>Chave=valor</c> genérico. Duplicada
+    /// aqui (não referenciada de <c>Prumo.Api.Tests.Search</c>) de propósito: os dois arquivos testam
+    /// tipos de namespaces de produção diferentes (<c>Embeddings</c> vs. <c>Search.QueryEmbedding</c>)
+    /// e não têm hoje nenhuma dependência cruzada de teste — introduzir uma só para isto pesaria mais
+    /// que duas cópias pequenas e estáveis.
+    ///
+    /// <para>
+    /// <b>Sem o separador <c>.</c> — achado do review ciclo 3, pego NESTE arquivo:</b> a primeira
+    /// forma (ciclo 2) incluía <c>.</c> e falso-positivava contra <see cref="BaseUrl"/> deste próprio
+    /// arquivo (<c>http://fake-embeddings.test/v1</c> — o host de teste termina no TLD reservado
+    /// <c>.test</c>, RFC 2606, então "embeddings.test" casava com "Embeddings" + separador + chave
+    /// "test"). Reproduzido rodando estes testes: as três asserções que comparam <c>Message</c> contra
+    /// <see cref="BaseUrl"/> (ex. <c>EmbedAsync_ThrowsAnErrorCitingTheHttpStatus_...</c>) falhavam com
+    /// a forma antiga do regex, porque TODA mensagem deste provider cita o próprio endpoint. Só
+    /// <c>_</c>/<c>:</c>/<c>-</c> — os separadores reais desta configuração — ficaram no padrão.
+    /// </para>
+    /// </summary>
+    private static readonly Regex ConfigurationKeyRegex =
+        new(@"Embeddings[_:\-]{1,2}\w+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static void AssertNoServerConfigurationVocabulary(string message)
+    {
+        Assert.False(
+            ConfigurationKeyRegex.IsMatch(message),
+            $"Mensagem cita uma chave de configuração da seção Embeddings (alguma forma): \"{message}\".");
+        Assert.False(
+            message.Contains("Provider=", StringComparison.Ordinal),
+            $"Mensagem cita um par Chave=valor de configuração ('Provider='): \"{message}\".");
+    }
 }

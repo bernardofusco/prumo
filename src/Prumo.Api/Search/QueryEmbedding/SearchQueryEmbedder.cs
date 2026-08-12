@@ -130,9 +130,17 @@ public sealed class SearchQueryEmbedder : ISearchQueryEmbedder
         {
             // Só Message (nível superior) entra na nova mensagem — nunca ToString() nem
             // InnerException (ver XML-doc de SearchQueryEmbeddingProviderException para o porquê).
+            //
+            // MET-529: este texto vira o `detail` público do 502 (spec.md, tabela de erros: "status e
+            // endpoint, jamais chave, cabeçalho ou corpo" — a spec sanciona status/endpoint, nunca
+            // instrução de configuração). Antes desta correção, o prefixo citava
+            // "(Embeddings:Provider=openai-compatible)" — vocabulário de CONFIGURAÇÃO DE SERVIDOR no
+            // corpo HTTP que qualquer cliente lê (a tela ignora esse `detail` só porque optou por
+            // reescrevê-lo, App.tsx; o corpo problem+json continua público). Quem precisa saber qual
+            // variável configurar é quem OPERA o servidor — isso mora na documentação (README.md,
+            // "Sem provedor de embeddings configurado"), não no corpo de resposta.
             throw new SearchQueryEmbeddingProviderException(
-                "O provedor de embeddings configurado (Embeddings:Provider=openai-compatible) falhou " +
-                $"ao vetorizar a consulta de busca. {ex.Message}");
+                $"O provedor de embeddings configurado falhou ao vetorizar a consulta de busca. {ex.Message}");
         }
     }
 

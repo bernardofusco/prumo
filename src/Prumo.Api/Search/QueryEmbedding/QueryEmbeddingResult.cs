@@ -48,9 +48,18 @@ public enum QueryEmbeddingMode
 /// <see cref="QueryEmbeddingResult.Mode"/> é <see cref="QueryEmbeddingMode.Unavailable"/>; nos outros
 /// três modos é <see langword="null"/>. Achado do review da T6: os dois sub-casos têm causas
 /// diferentes ("não existe artefato para consultar" vs. "existe um provedor vivo, mas ele não
-/// consegue com ESTE texto") e um <c>detail</c> único no 422 mentia para um deles — dizer "configure
-/// Embeddings__Provider=openai-compatible" para <c>q=tv</c> sob <c>Provider=hashing</c> manda o
-/// usuário trocar de provedor por um motivo que não é o dele.
+/// consegue com ESTE texto") e um <c>detail</c> único no 422 mentia para um deles — o texto ÚNICO
+/// original mandava trocar de provedor mesmo quando <c>q=tv</c> sob <c>Provider=hashing</c> JÁ tinha
+/// um provedor vivo configurado, só não dava conta DESTE texto.
+///
+/// <para>
+/// <b>MET-529:</b> o <c>detail</c> do sub-caso <see cref="NoPrecomputedVector"/> foi além — chegou a
+/// citar a CHAVE de configuração (<c>Embeddings__Provider=openai-compatible</c>) direto no corpo HTTP
+/// público (vocabulário de servidor não pertence ao <c>detail</c> que qualquer cliente lê). Os dois
+/// <c>detail</c> hoje (<c>SearchEndpoints.EmbeddingUnavailableProblem</c>) distinguem as causas reais
+/// só com vocabulário de PRODUTO — a instrução de configuração mora no log do servidor e na
+/// documentação (README.md, "Sem provedor de embeddings configurado"), nunca mais aqui.
+/// </para>
 /// </summary>
 public enum QueryEmbeddingUnavailableReason
 {
