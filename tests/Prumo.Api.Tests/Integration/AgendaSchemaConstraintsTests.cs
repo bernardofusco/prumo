@@ -1,4 +1,5 @@
 using Npgsql;
+
 using NpgsqlTypes;
 
 namespace Prumo.Api.Tests.Integration;
