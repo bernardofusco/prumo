@@ -38,9 +38,9 @@ public static class ReservationDefenseRegistration
         // Chave = SchedulingOptions.ExclusionDefenseName ("exclusion") — o teste de carga (T15)
         // resolve pela MESMA chave para instanciar as três defesas na comparação medida.
         services.AddKeyedScoped<IReservationDefense, ExclusionDefense>(SchedulingOptions.ExclusionDefenseName);
+        services.AddKeyedScoped<IReservationDefense, PessimisticDefense>(SchedulingOptions.PessimisticDefenseName);
 
-        // PessimisticDefense (T6) / OptimisticDefense (T7) entram aqui como
-        // services.AddKeyedScoped<IReservationDefense, PessimisticDefense>(SchedulingOptions.PessimisticDefenseName);
+        // OptimisticDefense (T7) entra aqui como
         // services.AddKeyedScoped<IReservationDefense, OptimisticDefense>(SchedulingOptions.OptimisticDefenseName);
         // — sem reescrever mais nada nesta classe (ver XML-doc acima).
 
