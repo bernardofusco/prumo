@@ -1,8 +1,10 @@
 using System.Globalization;
 
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
+using Prumo.Api.Agenda.Defenses;
 using Prumo.Api.Agenda.Scheduling;
 using Prumo.Api.Data;
 
@@ -47,6 +49,11 @@ public static class AgendaEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapGet("/professionals/{slug}/slots", HandleListSlotsAsync);
+
+        // POST /api/reservations (MET-480 T10, design.md §8, spec.md "Contrato API ↔ Frontend"):
+        // reserva pelo caminho oficial (Scheduling:Defense, resolvido pela composição keyed da T5 —
+        // ver HandleReserveAsync).
+        endpoints.MapPost("/reservations", HandleReserveAsync);
 
         return endpoints;
     }
@@ -160,6 +167,143 @@ public static class AgendaEndpoints
             statusCode: StatusCodes.Status404NotFound,
             title: "Profissional não encontrado.",
             extensions: new Dictionary<string, object?> { ["code"] = "not_found" });
+
+    // ---- POST /api/reservations (design.md §8 da MET-480, tasks.md T10, spec.md D5/D2, AGN-07/08) ---
+
+    /// <summary>
+    /// Cabeçalho <c>X-Prumo-Client-Key</c> (spec.md D2) — o único jeito desta rota identifica quem
+    /// pede a reserva; a identidade do PROFISSIONAL vem do slot escolhido, não de um parâmetro desta
+    /// rota (por isso <c>POST /api/reservations</c> não tem <c>{slug}</c> na URL, ao contrário de
+    /// <c>GET /api/professionals/{slug}/slots</c>).
+    /// </summary>
+    public const string ClientKeyHeaderName = "X-Prumo-Client-Key";
+
+    /// <summary>
+    /// design.md §8, spec.md "Fluxo": validação pura (passo 1, SEM I/O — <see cref="ReserveRequestValidator"/>,
+    /// testável sem banco, mesmo molde de <see cref="ListSlotsRequestValidator"/>) → a defesa CONFIGURADA
+    /// decide gravar/colidir (passo 2, único ponto de I/O de escrita — <see cref="IReservationDefense"/>
+    /// resolvido SEM chave pela composição da T5, <c>Scheduling:Defense</c>, spec.md D1: esta rota NUNCA
+    /// escolhe a defesa) → tradutor de resultado para HTTP (passo 3, spec.md "Contrato API ↔ Frontend").
+    /// <see cref="ReservationConflictMapper"/> (T4) já roda DENTRO da defesa (T5-T7) — o
+    /// <see cref="Npgsql.PostgresException"/> de overlap nunca alcança este método nem o
+    /// <see cref="Prumo.Api.ErrorHandling.GlobalExceptionHandler"/> (spec.md "Contexto"/D5, AGN-07).
+    /// </summary>
+    private static async Task<IResult> HandleReserveAsync(
+        [FromHeader(Name = ClientKeyHeaderName)] string? clientKeyHeader,
+        ReserveRequestBody? body,
+        IReservationDefense defense,
+        PrumoDbContext dbContext,
+        ILogger<Program> logger,
+        CancellationToken cancellationToken)
+    {
+        // 1. Validação — SEMPRE antes de qualquer I/O (mesmo padrão de HandleListSlotsAsync/HandleSearchAsync):
+        // cabeçalho ausente/mal formado ou corpo sem slotId nunca chegam à defesa nem ao banco.
+        var validation = ReserveRequestValidator.Validate(clientKeyHeader, body);
+
+        if (!validation.IsValid)
+        {
+            return InvalidReserveRequestProblem(validation.ErrorDetail!);
+        }
+
+        var request = validation.Request!;
+
+        // 2. A defesa CONFIGURADA decide (spec.md D1: a UI/API não escolhe qual das três) — o único
+        // ponto de I/O de escrita deste handler. CancellationToken repassado até o banco (spec.md
+        // "Concorrência e Idempotência").
+        var result = await defense
+            .TryReserveAsync(new ReservationRequest(request.SlotId, request.ClientKey), cancellationToken)
+            .ConfigureAwait(false);
+
+        // 3. Tradutor de DefenseResult → HTTP (spec.md "Contrato API ↔ Frontend"). Nenhum ramo abaixo
+        // toca PostgresException/DbUpdateException — a defesa (com o mapper da T4 por dentro) já
+        // resolveu isso antes de devolver o enum.
+        if (result.Kind is ReservationOutcomeKind.NotFound)
+        {
+            return ReserveSlotNotFoundProblem();
+        }
+
+        if (result.Kind is ReservationOutcomeKind.NotBookable)
+        {
+            LogReserveOutcome(logger, request.SlotId, request.ClientKey, result.Kind);
+
+            return SlotNotBookableProblem();
+        }
+
+        if (result.Kind is ReservationOutcomeKind.Conflict)
+        {
+            LogReserveOutcome(logger, request.SlotId, request.ClientKey, result.Kind);
+
+            return SlotConflictProblem();
+        }
+
+        // Created ou Replay a partir daqui — as duas únicas saídas com Reservation preenchido
+        // (DefenseResult.cs). professionalSlug não vem da defesa (design.md §6: nenhuma defesa
+        // conhece slug, só professional_id) — uma segunda leitura, pequena, só nestes dois casos.
+        var reservation = result.Reservation!;
+
+        var professionalSlug = await dbContext.Professionals
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == reservation.ProfessionalId)
+            .Select(candidate => candidate.Slug)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        LogReserveOutcome(logger, request.SlotId, request.ClientKey, result.Kind);
+
+        var response = new ReserveResponse(
+            reservation.ReservationId,
+            reservation.SlotId,
+            professionalSlug,
+            reservation.Start.UtcDateTime,
+            reservation.End.UtcDateTime,
+            Replay: result.Kind == ReservationOutcomeKind.Replay);
+
+        return result.Kind == ReservationOutcomeKind.Created
+            ? TypedResults.Json(response, statusCode: StatusCodes.Status201Created)
+            : TypedResults.Ok(response);
+    }
+
+    /// <summary>
+    /// spec.md "Segredos e Custo Externo"/"Log de reserva": "não gravar o UUID completo do cliente" —
+    /// no máximo um prefixo de 8 hex (mesmo limite que a spec admite para
+    /// <c>PostgresException.Detail</c>, que este log NUNCA carrega: a defesa já traduziu qualquer
+    /// exceção antes de devolver <see cref="ReservationOutcomeKind"/> a este método — não há exceção
+    /// nenhuma aqui para logar). <c>N</c> (<see cref="Guid.ToString(string?)"/>) é a forma sem hífens —
+    /// os 8 primeiros caracteres já bastam para correlacionar linhas de log da mesma tentativa sem
+    /// reconstituir a chave completa.
+    /// </summary>
+    private static void LogReserveOutcome(ILogger logger, long slotId, Guid clientKey, ReservationOutcomeKind kind) =>
+        logger.LogInformation(
+            "Reserva processada: slot {SlotId}, resultado {Outcome}, clientKeyPrefix {ClientKeyPrefix}.",
+            slotId, kind, clientKey.ToString("N")[..8]);
+
+    private static IResult InvalidReserveRequestProblem(string detail) =>
+        TypedResults.Problem(
+            detail: detail,
+            statusCode: StatusCodes.Status400BadRequest,
+            title: "Requisição de reserva inválida.",
+            extensions: new Dictionary<string, object?> { ["code"] = "invalid_request" });
+
+    private static IResult ReserveSlotNotFoundProblem() =>
+        TypedResults.Problem(
+            detail: "Nenhum horário foi encontrado para o identificador informado.",
+            statusCode: StatusCodes.Status404NotFound,
+            title: "Horário não encontrado.",
+            extensions: new Dictionary<string, object?> { ["code"] = "not_found" });
+
+    private static IResult SlotConflictProblem() =>
+        TypedResults.Problem(
+            detail: "Este horário acabou de ser reservado por outro cliente. Escolha outro horário.",
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Conflito de agendamento.",
+            extensions: new Dictionary<string, object?> { ["code"] = "slot_conflict" });
+
+    private static IResult SlotNotBookableProblem() =>
+        TypedResults.Problem(
+            detail: "Este horário já passou e não pode mais ser reservado.",
+            statusCode: StatusCodes.Status422UnprocessableEntity,
+            title: "Horário não reservável.",
+            extensions: new Dictionary<string, object?> { ["code"] = "slot_not_bookable" });
 }
 
 // ---- validação (passo 1 do handler — sem NENHUM I/O) ---------------------------------------------
@@ -247,4 +391,56 @@ internal sealed record ListSlotsValidationResult(bool IsValid, SlotsWindow? Wind
     public static ListSlotsValidationResult Valid(SlotsWindow window) => new(true, window, null);
 
     public static ListSlotsValidationResult Invalid(string errorDetail) => new(false, null, errorDetail);
+}
+
+// ---- validação de POST /api/reservations (passo 1 do handler — sem NENHUM I/O) --------------------
+
+/// <summary>
+/// Regras de <c>POST /api/reservations</c> (spec.md D2/"Contrato API ↔ Frontend", tasks.md T10),
+/// aplicadas ANTES de qualquer I/O — mesmo molde de <see cref="ListSlotsRequestValidator"/>/
+/// <c>Prumo.Api.Search.SearchRequestValidator</c>. O cabeçalho chega como <c>string?</c> cru (nunca
+/// <c>Guid?</c>: um binder de <c>Guid</c> falharia o parâmetro ANTES deste validador rodar — mesmo
+/// cuidado MET-526 de <c>SearchRequestValidator</c> — e a mensagem de 400 não citaria o vocabulário
+/// desta classe).
+/// </summary>
+internal static class ReserveRequestValidator
+{
+    /// <summary>
+    /// Ordem deliberada (spec.md "Done when" da T10 — "cabeçalho... ANTES de qualquer I/O"): o
+    /// cabeçalho é conferido PRIMEIRO. Um <paramref name="body"/> ausente/nulo (nenhum JSON enviado,
+    /// nenhum <c>Content-Type: application/json</c>) e um <see cref="ReserveRequestBody.SlotId"/>
+    /// ausente ou não-positivo levam à MESMA mensagem — um <c>bigint GENERATED ALWAYS AS IDENTITY</c>
+    /// nunca é <c>&lt;= 0</c> (T1), então esse valor já é, por construção, "não informado" em
+    /// vocabulário de produto.
+    /// </summary>
+    public static ReserveValidationResult Validate(string? clientKeyHeader, ReserveRequestBody? body)
+    {
+        if (string.IsNullOrWhiteSpace(clientKeyHeader) || !Guid.TryParse(clientKeyHeader, out var clientKey))
+        {
+            return ReserveValidationResult.Invalid(
+                $"O cabeçalho {AgendaEndpoints.ClientKeyHeaderName} é obrigatório e precisa ser um identificador UUID válido.");
+        }
+
+        if (body?.SlotId is null || body.SlotId.Value <= 0)
+        {
+            return ReserveValidationResult.Invalid(
+                "O corpo da requisição precisa informar \"slotId\" com o identificador do horário escolhido.");
+        }
+
+        return ReserveValidationResult.Valid(new ValidatedReserveRequest(body.SlotId.Value, clientKey));
+    }
+}
+
+/// <summary>Reserva já validada (cabeçalho parseado, <c>slotId</c> presente e positivo) — pronta para a defesa (T5-T7) decidir.</summary>
+internal sealed record ValidatedReserveRequest(long SlotId, Guid ClientKey);
+
+/// <summary>
+/// Resultado de <see cref="ReserveRequestValidator.Validate"/>: ou <see cref="Request"/> (válido) ou
+/// <see cref="ErrorDetail"/> (400) — nunca os dois. Mesmo molde de <see cref="ListSlotsValidationResult"/>.
+/// </summary>
+internal sealed record ReserveValidationResult(bool IsValid, ValidatedReserveRequest? Request, string? ErrorDetail)
+{
+    public static ReserveValidationResult Valid(ValidatedReserveRequest request) => new(true, request, null);
+
+    public static ReserveValidationResult Invalid(string errorDetail) => new(false, null, errorDetail);
 }

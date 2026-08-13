@@ -45,3 +45,33 @@ public sealed record AgendaSlotItem(
     [property: JsonPropertyName("start")] DateTime Start,
     [property: JsonPropertyName("end")] DateTime End,
     [property: JsonPropertyName("status")] string Status);
+
+// ---- POST /api/reservations (design.md §8 da MET-480, tasks.md T10, spec.md "Contrato API ↔
+// Frontend") ---------------------------------------------------------------------------------------
+
+/// <summary>
+/// Corpo de <c>POST /api/reservations</c> (spec.md "Contrato API ↔ Frontend": <c>{ "slotId": 42 }</c>).
+/// <see cref="SlotId"/> é <c>long?</c>, não <c>long</c>, de propósito: um corpo ausente/malformado
+/// deixa <see cref="SlotId"/> <see langword="null"/> em vez de <c>0</c> (um id de banco nunca é zero,
+/// mas <c>0</c> ainda seria um valor "válido" do tipo — <see langword="null"/> distingue "não
+/// informado" de "informou zero" para <see cref="ReserveRequestValidator"/>).
+/// </summary>
+public sealed record ReserveRequestBody(
+    [property: JsonPropertyName("slotId")] long? SlotId);
+
+/// <summary>
+/// Corpo <c>201</c>/<c>200</c> de <c>POST /api/reservations</c> (spec.md "Contrato API ↔ Frontend",
+/// forma literal do exemplo): os mesmos cinco campos de dado mais <see cref="Replay"/>, que distingue
+/// "reserva nova" (<c>201</c>, <see langword="false"/>) de "já existia para este cliente" (<c>200</c>,
+/// <see langword="true"/>, spec.md F3) — o React não trata os dois como o mesmo evento (MET-480
+/// design.md §10, <c>ProfessionalSlots</c>). <see cref="Start"/>/<see cref="End"/> são
+/// <see cref="DateTime"/> UTC, mesma decisão (e mesmo motivo — sufixo <c>Z</c> literal) de
+/// <see cref="AgendaSlotItem"/>.
+/// </summary>
+public sealed record ReserveResponse(
+    [property: JsonPropertyName("reservationId")] long ReservationId,
+    [property: JsonPropertyName("slotId")] long SlotId,
+    [property: JsonPropertyName("professionalSlug")] string ProfessionalSlug,
+    [property: JsonPropertyName("start")] DateTime Start,
+    [property: JsonPropertyName("end")] DateTime End,
+    [property: JsonPropertyName("replay")] bool Replay);
