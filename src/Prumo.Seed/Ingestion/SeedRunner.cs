@@ -1,5 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 
+using Npgsql;
+
+using NpgsqlTypes;
+
 using Pgvector;
 
 using Prumo.Api.Data;
@@ -53,10 +57,14 @@ public sealed class SeedRunner(
         var (embedded, skipped) = await EmbedProfessionalsNeedingItAsync(corpus.Professionals, cancellationToken)
             .ConfigureAwait(false);
 
+        var (agendaSlotsPublished, agendaSlotsPreserved) = await PublishAgendaSlotsAsync(corpus.Professionals, cancellationToken)
+            .ConfigureAwait(false);
+
         return new SeedSummary(
             specialtiesCreated, specialtiesUpdated,
             professionalsCreated, professionalsUpdated,
-            embedded, skipped);
+            embedded, skipped,
+            agendaSlotsPublished, agendaSlotsPreserved);
     }
 
     // ---- especialidades ------------------------------------------------------------------------
@@ -290,4 +298,210 @@ public sealed class SeedRunner(
 
         return batch.Length;
     }
+
+    // ---- agenda: slots sintéticos rolantes (MET-480 T8, design.md §9, spec.md D8/J1) ------------
+
+    /// <summary>
+    /// Especialidade que a jornada J1 exige presente entre os profissionais curados (spec.md D8/J1:
+    /// "vazamento no banheiro" -&gt; encanador). Constante, não mágica: se
+    /// <see cref="SeedRunnerOptions.AgendaProfessionalSlugs"/> mudar (produção ou teste) e deixar de
+    /// incluir um <c>encanador</c>, <see cref="ValidateCuratedProfessionals"/> falha alto em vez de
+    /// publicar uma agenda sem a jornada principal do case.
+    /// </summary>
+    private const string RequiredSpecialtySlugForJourney = "encanador";
+
+    /// <summary>
+    /// Publica a grade rolante de <see cref="AgendaSeedPlan.BuildWindows"/> para os profissionais
+    /// curados em <see cref="SeedRunnerOptions.AgendaProfessionalSlugs"/> (design.md §9).
+    ///
+    /// <para>
+    /// <b>Idempotência (o cuidado central da T8):</b> para cada profissional × janela gerenciada,
+    /// primeiro um <c>DELETE</c> GUARDADO — só remove um slot <c>source='seed'</c> DAQUELE
+    /// profissional, NAQUELA janela exata, e só se <c>NOT EXISTS</c> reserva referenciando o seu
+    /// <c>id</c> (nunca um slot <c>manual</c>, nunca um slot reservado) — e depois um
+    /// <c>INSERT ... ON CONFLICT DO NOTHING</c>: se o <c>DELETE</c> não removeu nada (porque a linha
+    /// que ocupa a janela tem reserva, ou é <c>manual</c>), o <c>INSERT</c> colide com a MESMA
+    /// EXCLUDE/UNIQUE que a defesa oficial do M2 usa (<c>reservations_no_overlap</c> é de
+    /// <c>reservations</c>; aqui é <c>availability_slots_no_overlap</c>, mesma família) e
+    /// simplesmente não duplica, em vez de lançar <c>PostgresException</c> 23P01. <c>ON CONFLICT</c>
+    /// sem <c>conflict_target</c> cobre TANTO violação de UNIQUE quanto de EXCLUDE — confirmado no
+    /// LIBDOCS (Context7, <c>/websites/postgresql_17</c>, <c>sql-insert.html</c>: "This clause
+    /// specifies an alternative action to raising a unique violation OR exclusion constraint
+    /// violation error"; <c>conflict_target</c> é opcional para <c>DO NOTHING</c>).
+    /// </para>
+    /// </summary>
+    private async Task<(int Published, int Preserved)> PublishAgendaSlotsAsync(
+        IReadOnlyList<ProfessionalSeedRecord> corpusProfessionals, CancellationToken cancellationToken)
+    {
+        var curatedSlugs = options.AgendaProfessionalSlugs;
+
+        if (curatedSlugs.Count == 0)
+        {
+            // Opt-out explícito (ex.: SeedIdempotencyTests/SeedDesyncTests, cuja fixture de corpus
+            // isolada nunca inclui os slugs curados de produção): nada a validar, nada a publicar.
+            // O default de produção (AgendaSeedPlan.DefaultCuratedProfessionalSlugs, via
+            // SeedRunnerOptions) nunca é vazio, então isto não afeta o comportamento real do seed.
+            return (0, 0);
+        }
+
+        ValidateCuratedProfessionals(curatedSlugs, corpusProfessionals);
+
+        IReadOnlyDictionary<string, long> professionalIdsBySlug;
+        try
+        {
+            var rows = await dbContext.Professionals
+                .AsNoTracking()
+                .Where(professional => curatedSlugs.Contains(professional.Slug))
+                .Select(professional => new { professional.Slug, professional.Id })
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            professionalIdsBySlug = rows.ToDictionary(row => row.Slug, row => row.Id, StringComparer.Ordinal);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new SeedDatabaseException($"Falha ao resolver profissionais curados da agenda sintética: {ex.Message}", ex);
+        }
+
+        var missingAfterUpsert = curatedSlugs.Where(slug => !professionalIdsBySlug.ContainsKey(slug)).ToList();
+        if (missingAfterUpsert.Count > 0)
+        {
+            // Defensivo: o upsert de profissionais já rodou acima e ValidateCuratedProfessionals já
+            // confirmou presença no corpus em memória — só chegaria aqui por uma dessincronia real
+            // entre corpus e banco (ex.: outra sessão apagou a linha entre o upsert e esta leitura).
+            var message =
+                "Falha ao resolver profissionais curados da agenda sintética: " +
+                $"{string.Join(", ", missingAfterUpsert)} não foram encontrados após o upsert.";
+            throw new SeedDatabaseException(message, new InvalidOperationException(message));
+        }
+
+        var windows = AgendaSeedPlan.BuildWindows(timeProvider.GetUtcNow());
+
+        var published = 0;
+        var attempted = 0;
+
+        await dbContext.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
+
+            foreach (var slug in curatedSlugs)
+            {
+                var professionalId = professionalIdsBySlug[slug];
+
+                foreach (var window in windows)
+                {
+                    attempted++;
+
+                    await DeleteFreeSeedSlotAsync(connection, professionalId, window.Start, window.End, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var inserted = await InsertSeedSlotIfAbsentAsync(
+                            connection, professionalId, window.Start, window.End, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    published += inserted;
+                }
+            }
+        }
+        catch (PostgresException ex)
+        {
+            throw new SeedDatabaseException($"Falha ao publicar slots sintéticos de agenda: {ex.Message}", ex);
+        }
+        finally
+        {
+            await dbContext.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
+
+        return (published, attempted - published);
+    }
+
+    /// <summary>
+    /// Guarda de entrada (spec.md D8: "slugs vêm do corpus, não inventados fora dele") — roda ANTES
+    /// de qualquer I/O de agenda: todo slug curado precisa existir no corpus efetivamente carregado
+    /// (real ou fixture de teste, via <see cref="SeedRunnerOptions.AgendaProfessionalSlugs"/>), e
+    /// pelo menos um deles precisa ser da especialidade <see cref="RequiredSpecialtySlugForJourney"/>
+    /// (spec.md J1). Falha alto (<see cref="SeedInputException"/>), nunca publica uma agenda
+    /// silenciosamente incompleta.
+    /// </summary>
+    private static void ValidateCuratedProfessionals(
+        IReadOnlyList<string> curatedSlugs, IReadOnlyList<ProfessionalSeedRecord> corpusProfessionals)
+    {
+        var bySlug = corpusProfessionals
+            .Where(professional => !string.IsNullOrWhiteSpace(professional.Slug))
+            .ToDictionary(professional => professional.Slug!, StringComparer.Ordinal);
+
+        var missing = curatedSlugs.Where(slug => !bySlug.ContainsKey(slug)).ToList();
+        if (missing.Count > 0)
+        {
+            throw new SeedInputException(
+                "A agenda sintética (MET-480 T8, spec.md D8) espera os slugs curados " +
+                $"{string.Join(", ", missing)} no corpus, mas não foram encontrados. Slugs de agenda " +
+                "vêm do corpus e não podem ser inventados fora dele — atualize " +
+                "SeedRunnerOptions.AgendaProfessionalSlugs (ou o corpus) se algo mudou.");
+        }
+
+        var hasRequiredSpecialty = curatedSlugs
+            .Select(slug => bySlug[slug])
+            .Any(professional => string.Equals(professional.SpecialtySlug, RequiredSpecialtySlugForJourney, StringComparison.Ordinal));
+
+        if (!hasRequiredSpecialty)
+        {
+            throw new SeedInputException(
+                "A agenda sintética (MET-480 T8, spec.md D8/J1: 'vazamento no banheiro' -> encanador) " +
+                $"exige ao menos um profissional curado de especialidade '{RequiredSpecialtySlugForJourney}' " +
+                "com slots publicados, e nenhum dos slugs configurados tem essa especialidade no corpus.");
+        }
+    }
+
+    /// <summary>
+    /// Remove o slot <c>source='seed'</c> desta janela exata para este profissional SE, e somente
+    /// se, estiver LIVRE (<c>NOT EXISTS</c> reserva pelo seu <c>id</c>) — nunca toca um slot
+    /// <c>manual</c> (fora do filtro <c>source = 'seed'</c>) nem um slot com reserva (o cuidado
+    /// central da T8, tasks.md: "um DELETE largo demais apagaria a reserva de alguém").
+    /// </summary>
+    private static async Task DeleteFreeSeedSlotAsync(
+        NpgsqlConnection connection, long professionalId, DateTimeOffset start, DateTimeOffset end, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM availability_slots AS slot
+            WHERE slot.professional_id = @professional_id
+              AND slot.source = 'seed'
+              AND slot.period = tstzrange(@start, @end, '[)')
+              AND NOT EXISTS (
+                  SELECT 1 FROM reservations AS reservation WHERE reservation.slot_id = slot.id
+              );
+            """;
+        command.Parameters.AddWithValue("professional_id", professionalId);
+        command.Parameters.Add(TimestampParameter("start", start));
+        command.Parameters.Add(TimestampParameter("end", end));
+
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Publica o slot <c>source='seed'</c> desta janela SE nenhuma linha (de qualquer <c>source</c>)
+    /// já ocupar um intervalo que sobrepõe (<c>ON CONFLICT DO NOTHING</c> — ver XML-doc de
+    /// <see cref="PublishAgendaSlotsAsync"/> para a fonte LIBDOCS de que isso cobre violação de
+    /// EXCLUDE, não só de UNIQUE). Devolve 1 se inseriu, 0 se o conflito foi absorvido.
+    /// </summary>
+    private static async Task<int> InsertSeedSlotIfAbsentAsync(
+        NpgsqlConnection connection, long professionalId, DateTimeOffset start, DateTimeOffset end, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO availability_slots (professional_id, period, source)
+            VALUES (@professional_id, tstzrange(@start, @end, '[)'), 'seed')
+            ON CONFLICT DO NOTHING;
+            """;
+        command.Parameters.AddWithValue("professional_id", professionalId);
+        command.Parameters.Add(TimestampParameter("start", start));
+        command.Parameters.Add(TimestampParameter("end", end));
+
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static NpgsqlParameter TimestampParameter(string name, DateTimeOffset value) =>
+        new(name, NpgsqlDbType.TimestampTz) { Value = value };
 }

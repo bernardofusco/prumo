@@ -48,7 +48,15 @@ public sealed class SeedIdempotencyTests(PostgresIntegrationFixture fixture)
 
         var provider = new CountingEmbeddingProvider(new HashingEmbeddingProvider());
         var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero));
-        var options = new SeedRunnerOptions { SpecialtiesPath = specialtiesPath, ProfessionalsPath = professionalsPath };
+        // AgendaProfessionalSlugs vazio (MET-480 T8): esta fixture isolada nunca contém os slugs
+        // curados de produção (AgendaSeedPlan.DefaultCuratedProfessionalSlugs) — o escopo deste
+        // teste é especialidade/profissional/embedding, não agenda.
+        var options = new SeedRunnerOptions
+        {
+            SpecialtiesPath = specialtiesPath,
+            ProfessionalsPath = professionalsPath,
+            AgendaProfessionalSlugs = [],
+        };
 
         try
         {

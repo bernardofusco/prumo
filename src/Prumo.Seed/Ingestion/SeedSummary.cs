@@ -13,7 +13,9 @@ public sealed record SeedSummary(
     int ProfessionalsCreated,
     int ProfessionalsUpdated,
     int Embedded,
-    int Skipped)
+    int Skipped,
+    int AgendaSlotsPublished,
+    int AgendaSlotsPreserved)
 {
     public string ToReport() => string.Format(
         CultureInfo.InvariantCulture,
@@ -22,11 +24,14 @@ public sealed record SeedSummary(
           Especialidades: {0} criada(s), {1} atualizada(s).
           Profissionais:  {2} criado(s), {3} atualizado(s).
           Embeddings:     {4} gerado(s), {5} pulado(s) (já sincronizado(s)).
+          Agenda:         {6} slot(s) publicado(s), {7} preservado(s) (reservado ou fora do gerenciado).
         """,
         SpecialtiesCreated,
         SpecialtiesUpdated,
         ProfessionalsCreated,
         ProfessionalsUpdated,
         Embedded,
-        Skipped);
+        Skipped,
+        AgendaSlotsPublished,
+        AgendaSlotsPreserved);
 }
