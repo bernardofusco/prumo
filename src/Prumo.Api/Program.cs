@@ -90,13 +90,12 @@ builder.Services.AddSearchQueryEmbedding(builder.Configuration);
 // CancellationToken pinado, sem precisar de Postgres real).
 builder.Services.AddScoped<IProfessionalSearchQuery, ProfessionalSearchQuery>();
 
-// Agenda e reserva sob concorrência (MET-480 T5, design.md §2/§6): Scheduling:Defense (conjunto
+// Agenda e reserva sob concorrência (MET-480 T5-T7, design.md §2/§6): Scheduling:Defense (conjunto
 // fechado)/minutos/janela/fuso — validados NO BOOT (ValidateOnStart, mesmo padrão das duas chamadas
-// acima) — e as três defesas registradas por chave, com o caminho HTTP oficial resolvendo pela
-// defesa configurada (spec.md D1: a UI não escolhe). AddReservationDefense já chama
-// AddSchedulingOptions internamente (Agenda/Defenses/ReservationDefenseRegistration.cs) — uma linha
-// basta aqui. Só ExclusionDefense (T5, oficial) tem implementação até agora; PessimisticDefense/
-// OptimisticDefense (T6/T7) entram sem reescrever esta composição.
+// acima) — e as três defesas (ExclusionDefense/PessimisticDefense/OptimisticDefense) registradas por
+// chave, com o caminho HTTP oficial resolvendo pela defesa configurada (spec.md D1: a UI não
+// escolhe). AddReservationDefense já chama AddSchedulingOptions internamente
+// (Agenda/Defenses/ReservationDefenseRegistration.cs) — uma linha basta aqui.
 builder.Services.AddReservationDefense(builder.Configuration);
 
 // Relógio da API (design.md §2, D7 da spec MET-480): TimeProvider.System como singleton — o Seed já

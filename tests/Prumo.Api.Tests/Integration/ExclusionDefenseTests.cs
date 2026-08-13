@@ -1,8 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 
 using Npgsql;
 
@@ -19,14 +15,14 @@ namespace Prumo.Api.Tests.Integration;
 /// Prova AGN-06/AGN-07/AGN-08 (specs/features/met-480-agendamento-concorrencia/spec.md, tasks.md
 /// T5): <see cref="ExclusionDefense"/> — a defesa OFICIAL do produto (spec.md D1, design.md §6.1) —
 /// grava a reserva por <c>INSERT</c> e deixa a EXCLUDE de <c>reservations_no_overlap</c>
-/// (<c>db/migrations/0005_agenda_and_reservations.sql</c>, T1) decidir a corrida. Também prova
-/// <see cref="SchedulingOptions"/>: <c>Scheduling:Defense</c> validado NO BOOT (design.md §2).
+/// (<c>db/migrations/0005_agenda_and_reservations.sql</c>, T1) decidir a corrida.
 ///
 /// <para>
-/// <b>Por que este arquivo é o único da T5, mesmo cobrindo boot + defesa:</b> tasks.md lista um só
-/// caminho ("Where") para os testes da T5. Os casos de <see cref="SchedulingOptions"/> não tocam
-/// Postgres (mesmo padrão de <c>RankingOptionsValidationTests</c>, sem <see cref="PostgresIntegrationFixture"/>
-/// de verdade) — convivem aqui porque são "Done when" da MESMA task, não de uma superfície separada.
+/// <b>Ajuste 3 (revisão da Fase 3):</b> os casos de boot de <see cref="SchedulingOptions"/>
+/// (<c>ValidateOnStart</c>) viviam aqui mas nunca tocavam Postgres — mudaram para
+/// <c>Prumo.Api.Tests.Agenda.SchedulingOptionsValidationTests</c> (mesmo padrão de
+/// <c>RankingOptionsValidationTests</c>, sem <see cref="PostgresIntegrationFixture"/> nem
+/// <see cref="IntegrationCollection"/>) para que o gate <c>full</c> os cubra sem exigir Docker.
 /// </para>
 ///
 /// <para>
@@ -40,68 +36,6 @@ public sealed class ExclusionDefenseTests(PostgresIntegrationFixture fixture)
     // Instante sintético fixo, longe de qualquer data real usada por outra classe desta collection —
     // mesma convenção de AgendaSchemaConstraintsTests/AgendaMappingTests.
     private static readonly DateTimeOffset FixedNow = new(2031, 6, 2, 12, 0, 0, TimeSpan.Zero);
-
-    // ---- boot: Scheduling:Defense e o resto de SchedulingOptions (design.md §2, "Done when" da T5) --
-
-    [Fact]
-    public async Task HostWithDefaultConfiguration_StartsWithoutThrowing()
-    {
-        using var host = BuildOptionsOnlyHost([]);
-
-        var exception = await Record.ExceptionAsync(() => host.StartAsync());
-
-        Assert.Null(exception);
-        await host.StopAsync();
-    }
-
-    [Fact]
-    public async Task HostWithUnknownDefenseName_FailsToStart_AndMessageNamesTheKeyAndTheValue()
-    {
-        using var host = BuildOptionsOnlyHost(new Dictionary<string, string?>
-        {
-            ["Scheduling:Defense"] = "retry-until-it-works",
-        });
-
-        var exception = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
-
-        Assert.Contains("Scheduling:Defense", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("retry-until-it-works", exception.Message, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("Scheduling:MinSlotMinutes", "0")]
-    [InlineData("Scheduling:MaxSlotMinutes", "-10")]
-    [InlineData("Scheduling:DefaultWindowDays", "0")]
-    public async Task HostWithNonPositiveMinutesOrWindow_FailsToStart_AndMessageNamesTheKey(string key, string value)
-    {
-        using var host = BuildOptionsOnlyHost(new Dictionary<string, string?> { [key] = value });
-
-        var exception = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
-
-        Assert.Contains(key, exception.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task HostWithUnresolvableDisplayTimeZone_FailsToStart_AndMessageNamesTheKey()
-    {
-        using var host = BuildOptionsOnlyHost(new Dictionary<string, string?>
-        {
-            ["Scheduling:DisplayTimeZone"] = "Not/A_Real_Zone",
-        });
-
-        var exception = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
-
-        Assert.Contains("Scheduling:DisplayTimeZone", exception.Message, StringComparison.Ordinal);
-    }
-
-    private static IHost BuildOptionsOnlyHost(Dictionary<string, string?> configurationValues)
-    {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Configuration.AddInMemoryCollection(configurationValues);
-        builder.Services.AddSchedulingOptions(builder.Configuration);
-
-        return builder.Build();
-    }
 
     // ---- caminho feliz ------------------------------------------------------------------------------
 

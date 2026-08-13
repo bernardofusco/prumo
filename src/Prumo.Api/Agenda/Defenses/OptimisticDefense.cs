@@ -52,18 +52,30 @@ namespace Prumo.Api.Agenda.Defenses;
 /// (spec.md F3/F4), mesmo raciocínio de <see cref="ExclusionDefense"/>.
 /// </description></item>
 /// <item><description>
-/// <see cref="ReservationIntent.Accept"/> OU <see cref="ReservationIntent.Conflict"/> disputam a MESMA
-/// incrementação condicional (<see cref="TryClaimVersionAndReserveAsync"/>) — é o banco, via CAS em
-/// SQL, quem decide se este request ainda está no jogo, exatamente como <see cref="ExclusionDefense"/>
-/// deixa o <c>INSERT</c> decidir para os mesmos dois <see cref="ReservationIntent"/>.
+/// <see cref="ReservationIntent.Conflict"/> — a leitura sequencial JÁ viu uma reserva de OUTRO
+/// <c>clientKey</c> para este slot — devolve <see cref="DefenseResult.Conflict()"/> DIRETO, sem tocar
+/// <c>version</c>: não há corrida SIMULTÂNEA nenhuma a resolver aqui, só um recém-chegado depois do
+/// fato. Mesmo comportamento de <see cref="PessimisticDefense"/> (que também devolve Conflict direto
+/// sob o lock, sem tentar escrever de novo) — ao contrário de <see cref="ExclusionDefense"/>, que
+/// tenta o MESMO <c>INSERT</c> para Accept e Conflict porque, lá, é o próprio <c>INSERT</c> quem
+/// resolve a corrida. Aqui, deixar um Conflict sequencial prosseguir até o <c>UPDATE</c> condicional
+/// incrementaria <c>version</c> À TOA (o CAS sucede: nada mudou <c>version</c> desde a leitura) e só o
+/// <c>INSERT</c> subsequente — isto é, a EXCLUDE — impediria a segunda linha; provado por ablação do
+/// reviewer da Fase 3 (config sem EXCLUDE: 2 linhas, <c>version=2</c>) que a defesa otimista não pode
+/// depender da constraint FORA da corrida que ela mesma existe para resolver.
 /// </description></item>
 /// <item><description>
-/// ZERO linhas afetadas pelo <c>UPDATE</c> ⇒ outro <c>clientKey</c> já reivindicou esta versão do slot
-/// — MAS "outro" pode ser o MESMO <c>clientKey</c> perdendo a corrida contra si mesmo (spec.md
-/// "Concorrência e Idempotência": o perdedor da corrida do mesmo cliente é Replay, NUNCA Conflict) —
-/// <see cref="ResolveLostVersionRaceAsync"/> relê o vencedor antes de decidir, mesmo raciocínio de
-/// <see cref="ReservationConflictMapper.Map"/> (T4), só que sem exceção nenhuma: perder a CAS
-/// condicional não é uma falha de banco, é o próprio mecanismo funcionando.
+/// Só <see cref="ReservationIntent.Accept"/> chega à incrementação condicional
+/// (<see cref="TryClaimVersionAndReserveAsync"/>) — é o banco, via CAS em SQL, quem decide se este
+/// request ainda está no jogo da corrida SIMULTÂNEA (a que a régua mede).
+/// </description></item>
+/// <item><description>
+/// ZERO linhas afetadas pelo <c>UPDATE</c> ⇒ outro <c>clientKey</c> venceu a CAS entre a leitura deste
+/// request e o <c>UPDATE</c> — MAS "outro" pode ser o MESMO <c>clientKey</c> perdendo a corrida contra
+/// si mesmo (spec.md "Concorrência e Idempotência": o perdedor da corrida do mesmo cliente é Replay,
+/// NUNCA Conflict) — <see cref="ResolveLostVersionRaceAsync"/> relê o vencedor antes de decidir, mesmo
+/// raciocínio de <see cref="ReservationConflictMapper.Map"/> (T4), só que sem exceção nenhuma: perder
+/// a CAS condicional não é uma falha de banco, é o próprio mecanismo funcionando.
 /// </description></item>
 /// <item><description>
 /// UMA linha afetada ⇒ este request venceu a versão: <c>INSERT</c> da reserva (o <c>period</c> copiado
@@ -110,9 +122,18 @@ public sealed class OptimisticDefense(PrumoDbContext dbContext, TimeProvider tim
             return DefenseResult.Replay(ToReservedSlot(existingReservation!));
         }
 
-        // Accept OU Conflict (XML-doc da classe, passo 3): as duas disputam a MESMA incrementação
-        // condicional de version — é o banco, não este código, que decide se o request ainda está no
-        // jogo.
+        if (intent == ReservationIntent.Conflict)
+        {
+            // A leitura sequencial acima já viu a reserva de OUTRO clientKey (XML-doc da classe,
+            // passo 3): recusa direto, sem tocar version — mesmo comportamento de
+            // PessimisticDefense.TryReserveAsync. Deixar isto prosseguir até a CAS incrementaria
+            // version à toa e faria a defesa depender da EXCLUDE fora da corrida simultânea.
+            return DefenseResult.Conflict();
+        }
+
+        // Só ReservationIntent.Accept chega aqui: disputa a incrementação condicional de version — é
+        // o banco, via CAS em SQL, quem decide se este request ainda está no jogo da corrida
+        // SIMULTÂNEA (a que a régua mede).
         return await TryClaimVersionAndReserveAsync(slot, request, cancellationToken);
     }
 

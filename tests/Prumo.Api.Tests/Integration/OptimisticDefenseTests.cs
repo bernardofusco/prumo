@@ -195,6 +195,52 @@ public sealed class OptimisticDefenseTests(PostgresIntegrationFixture fixture)
         }
     }
 
+    // ---- conflito sequencial: recém-chegado depois do vencedor, sem tocar version --------------------
+
+    /// <summary>
+    /// Ajuste 1 (revisão da Fase 3, ablação do reviewer): um cliente que chega DEPOIS do vencedor já
+    /// ter commitado não está numa corrida simultânea nenhuma — <see cref="ReservationDecision.Decide"/>
+    /// já devolve <see cref="ReservationIntent.Conflict"/> na leitura sequencial, e
+    /// <see cref="OptimisticDefense"/> tem de recusar SEM passar pelo <c>UPDATE</c> condicional (mesmo
+    /// comportamento de <see cref="PessimisticDefense"/>). Provado por ablação (config sem EXCLUDE):
+    /// sem este guard, o CAS sucede porque nada mudou <c>version</c> desde a leitura do recém-chegado —
+    /// só a EXCLUDE barraria o segundo <c>INSERT</c>, deixando a defesa otimista dependente da mesma
+    /// constraint que ela deveria dispensar fora da corrida simultânea.
+    /// </summary>
+    [Fact]
+    public async Task TryReserveAsync_WithAnotherClientsExistingReservation_ReturnsConflict_WithoutIncrementingVersion()
+    {
+        var scenario = await CreateScenarioAsync(startInHours: 1, endInHours: 2);
+
+        try
+        {
+            var winner = await CreateDefense().TryReserveAsync(
+                new ReservationRequest(scenario.SlotId, Guid.NewGuid()), CancellationToken.None);
+            Assert.Equal(ReservationOutcomeKind.Created, winner.Kind);
+
+            var versionAfterWinner = await ReadSlotVersionAsync(scenario.SlotId);
+            Assert.Equal(1, versionAfterWinner);
+
+            var latecomer = await CreateDefense().TryReserveAsync(
+                new ReservationRequest(scenario.SlotId, Guid.NewGuid()), CancellationToken.None);
+
+            Assert.Equal(ReservationOutcomeKind.Conflict, latecomer.Kind);
+            Assert.Null(latecomer.Reservation);
+
+            var rowCount = await CountReservationsAsync(scenario.SlotId);
+            Assert.Equal(1, rowCount);
+
+            // O núcleo do Ajuste 1: o recém-chegado NUNCA tenta a CAS — version continua em 1, não
+            // sobe para 2 só porque alguém leu o slot depois do fato.
+            var versionAfterLatecomer = await ReadSlotVersionAsync(scenario.SlotId);
+            Assert.Equal(1, versionAfterLatecomer);
+        }
+        finally
+        {
+            await CleanupScenarioAsync(scenario);
+        }
+    }
+
     // ---- passado: NotBookable, zero insert -----------------------------------------------------------
 
     [Fact]

@@ -28,9 +28,9 @@ public sealed class SchedulingOptions
 
     /// <summary>
     /// Conjunto fechado de <see cref="Defense"/> (design.md §2: "Defense ∈ conjunto fechado") — as
-    /// TRÊS defesas do M2, mesmo que só <see cref="ExclusionDefenseName"/> tenha implementação até a
-    /// T5 (a ausência de registro para as outras duas é resolvida em runtime pela composição de DI,
-    /// não aqui: esta validação só confere o VALOR da string).
+    /// TRÊS defesas do M2, todas registradas desde a T7
+    /// (<c>Prumo.Api.Agenda.Defenses.ReservationDefenseRegistration.AddReservationDefense</c>): esta
+    /// validação só confere o VALOR da string; a composição de DI é responsabilidade da classe acima.
     /// </summary>
     public static readonly IReadOnlySet<string> KnownDefenseNames = new HashSet<string>(StringComparer.Ordinal)
     {
