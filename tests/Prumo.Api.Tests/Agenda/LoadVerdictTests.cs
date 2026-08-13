@@ -119,6 +119,84 @@ public sealed class LoadVerdictTests
         Assert.Equal(1, veredito.Other);
     }
 
+    // ---- reprovação: Created informado NÃO cega o predicado ao status observado (review bloqueante) --
+
+    /// <summary>
+    /// Um <c>200</c> marcado <c>Created: true</c> por engano (a T15 monta <see cref="AttemptOutcome"/>
+    /// a partir da resposta HTTP; <c>Created: res.StatusCode == HttpStatusCode.OK</c> seria o erro de
+    /// uma palavra mais natural de digitar) não pode ser contado como sucesso: C1 exige
+    /// <c>StatusCode == 201</c> tanto quanto <c>Created</c>. Sem nenhum sucesso real no lote,
+    /// <see cref="LoadVerdictResult.Successes"/> fica em zero e o lote reprova.
+    /// </summary>
+    [Fact]
+    public void Judge_ComCoringaDuzentosMarcadoCreated_NaoContaComoSucessoEReprova()
+    {
+        var lote = LoteComCoringa(new AttemptOutcome(StatusCode: 200, Code: null, Created: true));
+
+        var veredito = LoadVerdict.Judge(lote);
+
+        Assert.False(veredito.Passed);
+        Assert.Equal(0, veredito.Successes);
+        Assert.True(veredito.Other >= 0);
+    }
+
+    /// <summary>
+    /// O buraco herdado do M1, no probe exato do reviewer: um <c>503</c> marcado <c>Created: true</c>
+    /// não pode virar o vencedor da corrida. Mesmo confrontando <c>Created</c> com <c>StatusCode</c>.
+    /// </summary>
+    [Fact]
+    public void Judge_ComCoringaQuinhentosETresMarcadoCreated_NaoContaComoSucessoEReprova()
+    {
+        var lote = LoteComCoringa(new AttemptOutcome(StatusCode: 503, Code: "service_unavailable", Created: true));
+
+        var veredito = LoadVerdict.Judge(lote);
+
+        Assert.False(veredito.Passed);
+        Assert.Equal(0, veredito.Successes);
+        Assert.True(veredito.Other >= 0);
+    }
+
+    /// <summary>
+    /// O vice-versa do mesmo bug: um <c>201</c> genuíno, mas marcado <c>Created: false</c> (a resposta
+    /// venceu a corrida, mas quem montou o <see cref="AttemptOutcome"/> não registrou isso). C1 exige
+    /// as duas condições — este outcome também não conta como sucesso, e cai em
+    /// <see cref="LoadVerdictResult.Other"/>, nunca silenciosamente ignorado.
+    /// </summary>
+    [Fact]
+    public void Judge_ComCoringaDuzentosEUmMarcadoNaoCreated_NaoContaComoSucessoEReprova()
+    {
+        var lote = LoteComCoringa(new AttemptOutcome(StatusCode: 201, Code: null, Created: false));
+
+        var veredito = LoadVerdict.Judge(lote);
+
+        Assert.False(veredito.Passed);
+        Assert.Equal(0, veredito.Successes);
+        Assert.Equal(1, veredito.Other);
+    }
+
+    /// <summary>
+    /// O probe exato do review que produzia <c>Other = -1</c> na implementação antiga: um
+    /// <c>409</c>/<c>slot_conflict</c> genuíno, incoerentemente marcado <c>Created: true</c>. C1 já
+    /// exclui este outcome de <see cref="LoadVerdictResult.Successes"/> (não é <c>201</c>); C2 ainda o
+    /// conta corretamente como conflito (o status OBSERVADO é mesmo <c>409</c>/<c>slot_conflict</c>).
+    /// Sem nenhum sucesso real no lote, o veredito reprova — e <see cref="LoadVerdictResult.Other"/>
+    /// nunca fica negativo, porque é contado por predicado próprio, não por subtração.
+    /// </summary>
+    [Fact]
+    public void Judge_ComCoringaConflitoMarcadoCreated_ContaComoConflitoNuncaComoOtherNegativo()
+    {
+        var lote = LoteComCoringa(new AttemptOutcome(StatusCode: 409, Code: "slot_conflict", Created: true));
+
+        var veredito = LoadVerdict.Judge(lote);
+
+        Assert.False(veredito.Passed);
+        Assert.Equal(0, veredito.Successes);
+        Assert.Equal(LoadVerdict.N, veredito.Conflicts);
+        Assert.Equal(0, veredito.Other);
+        Assert.True(veredito.Other >= 0);
+        Assert.Equal(lote.Count, veredito.Successes + veredito.Conflicts + veredito.Other);
+    }
+
     // ---- reprovação: tamanho do lote ---------------------------------------------------------------
 
     [Fact]
@@ -153,6 +231,20 @@ public sealed class LoadVerdictTests
         outcomes.AddRange(Enumerable.Repeat(Sucesso(), sucessos));
         outcomes.AddRange(Enumerable.Repeat(ConflitoSlotConflict(), conflitos));
         outcomes.AddRange(extras);
+
+        return outcomes;
+    }
+
+    /// <summary>
+    /// Lote de exatamente <see cref="LoadVerdict.N"/> tentativas: UM outcome "coringa" (o caso sob
+    /// teste) mais <c>N - 1</c> conflitos legítimos — SEM nenhum sucesso real. Espelha o probe do
+    /// review: troca só a identidade de um outcome, mantendo os demais corretos, para provar que o
+    /// coringa sozinho não força uma aprovação indevida.
+    /// </summary>
+    private static List<AttemptOutcome> LoteComCoringa(AttemptOutcome coringa)
+    {
+        var outcomes = new List<AttemptOutcome> { coringa };
+        outcomes.AddRange(Enumerable.Repeat(ConflitoSlotConflict(), LoadVerdict.N - 1));
 
         return outcomes;
     }

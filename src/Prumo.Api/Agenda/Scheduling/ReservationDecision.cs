@@ -30,10 +30,17 @@ public enum ReservationIntent
     /// <summary>Já existe reserva do MESMO <c>clientKey</c> para o slot: idempotente, não grava de novo.</summary>
     Replay,
 
-    /// <summary>Já existe reserva de OUTRO <c>clientKey</c> para o slot: recusa como conflito de negócio.</summary>
+    /// <summary>
+    /// O fim do slot ainda não chegou e já existe reserva de OUTRO <c>clientKey</c>: recusa como
+    /// conflito de negócio (spec.md D5, mapeia para <c>409</c>).
+    /// </summary>
     Conflict,
 
-    /// <summary>Nenhuma reserva existe, mas o fim do slot já chegou (<c>end &lt;= now</c>): recusa, não é conflito.</summary>
+    /// <summary>
+    /// O fim do slot já chegou (<c>end &lt;= now</c>), e não há reserva do MESMO cliente para
+    /// justificar um replay — vale mesmo que exista reserva de outro cliente (spec.md F4: um slot
+    /// no passado nunca é <c>409</c>, mapeia para <c>422</c>).
+    /// </summary>
     NotBookable,
 }
 
@@ -49,13 +56,18 @@ public enum ReservationIntent
 public static class ReservationDecision
 {
     /// <summary>
-    /// Ordem de avaliação (design.md §5, na ordem literal accept → replay → conflict →
-    /// not-bookable): se já existe uma reserva para o slot, o estado dela decide tudo — mesmo
-    /// cliente é <see cref="ReservationIntent.Replay"/> (idempotente, não importa o relógio: o
-    /// registro já existe), outro cliente é <see cref="ReservationIntent.Conflict"/>. Só quando NÃO
-    /// existe reserva nenhuma é que o relógio entra em jogo: fim já chegado (<c>now &gt;=
-    /// slot.End</c>, mesma fronteira de <see cref="SlotAvailability.Classify"/>) é
-    /// <see cref="ReservationIntent.NotBookable"/>; senão, <see cref="ReservationIntent.Accept"/>.
+    /// Ordem de avaliação (design.md §5; spec.md F4, review da T3 — Issue 3 corrigida): a
+    /// idempotência do MESMO cliente vence PRIMEIRO, antes de qualquer checagem de relógio —
+    /// reapresentar a confirmação de uma reserva que já aconteceu não é uma tentativa nova, mesmo
+    /// que o slot já tenha terminado (<see cref="ReservationIntent.Replay"/>). Só depois disso o
+    /// relógio decide: fim já chegado (<c>now &gt;= slot.End</c>, mesma fronteira de
+    /// <see cref="SlotAvailability.Classify"/> — só <see cref="SlotSnapshot.End"/> importa, um slot
+    /// EM ANDAMENTO com <c>start &lt;= now &lt; end</c> ainda é reservável) é
+    /// <see cref="ReservationIntent.NotBookable"/> — spec.md F4 é explícita: um slot no passado
+    /// nunca é <c>409</c>, mesmo que outro cliente já o tenha reservado. Só depois de passar pelo
+    /// relógio é que a existência de uma reserva de OUTRO cliente decide
+    /// <see cref="ReservationIntent.Conflict"/>; na ausência de tudo isso,
+    /// <see cref="ReservationIntent.Accept"/>.
     /// </summary>
     public static ReservationIntent Decide(
         DateTimeOffset now,
@@ -65,11 +77,16 @@ public static class ReservationDecision
     {
         ArgumentNullException.ThrowIfNull(slot);
 
-        if (existingForSlot is not null)
+        if (existingForSlot is not null && existingForSlot.ClientKey == clientKey)
         {
-            return existingForSlot.ClientKey == clientKey ? ReservationIntent.Replay : ReservationIntent.Conflict;
+            return ReservationIntent.Replay;
         }
 
-        return now < slot.End ? ReservationIntent.Accept : ReservationIntent.NotBookable;
+        if (now >= slot.End)
+        {
+            return ReservationIntent.NotBookable;
+        }
+
+        return existingForSlot is not null ? ReservationIntent.Conflict : ReservationIntent.Accept;
     }
 }

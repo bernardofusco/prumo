@@ -44,28 +44,39 @@ public static class LoadVerdict
     private const string SlotConflictCode = "slot_conflict";
 
     /// <summary>
-    /// C1 — sucesso é <c>Created</c> (isto é, <c>201</c>; NUNCA <c>200</c> replay — um replay no lote
-    /// de carga significaria que duas tentativas foram tratadas como o mesmo cliente, o que fura a
-    /// premissa de <see cref="N"/> <c>clientKey</c> distintos). C2 — conflito exige AS DUAS
-    /// condições: <c>StatusCode == 409</c> E <c>Code == "slot_conflict"</c>; um <c>409</c> com outro
-    /// <c>code</c> não é conflito desta régua, é uma recusa não identificada (cai em
-    /// <see cref="LoadVerdictResult.Other"/>). C3 — qualquer outra coisa (<c>503</c> incluso — é
-    /// exatamente o buraco que o <c>GlobalExceptionHandler</c> herdado do M1 abriria, MET-530) conta
-    /// como <see cref="LoadVerdictResult.Other"/> e reprova o lote. A aprovação exige TODAS as
-    /// condições ao mesmo tempo: exatamente <see cref="N"/> tentativas, exatamente 1 sucesso,
-    /// exatamente <c>N - 1</c> conflitos — o que já implica <c>Other == 0</c> aritmeticamente, mas a
-    /// checagem fica explícita para espelhar C1-C3 da spec sem depender de dedução.
+    /// C1 — sucesso exige AS DUAS condições: <c>StatusCode == 201</c> E <c>Created</c> (review
+    /// bloqueante da T3: um <see cref="AttemptOutcome.Created"/> confrontado apenas isoladamente,
+    /// sem checar <see cref="AttemptOutcome.StatusCode"/>, deixava um <c>503</c>/<c>500</c>/<c>200</c>
+    /// marcado (por engano ou bug de quem monta o lote) como <c>Created</c> passar como vencedor — o
+    /// buraco herdado do M1, exatamente o que esta régua existe para pegar). C2 — conflito também
+    /// exige AS DUAS condições: <c>StatusCode == 409</c> E <c>Code == "slot_conflict"</c>; um
+    /// <c>409</c> com outro <c>code</c> não é conflito desta régua. C3 — qualquer <see cref="AttemptOutcome"/>
+    /// que não satisfaça nem C1 nem C2 (inclusive um <c>409</c>/<c>slot_conflict</c> incoerentemente
+    /// marcado <see cref="AttemptOutcome.Created"/><c> = true</c>, que C1 já exclui por não ser
+    /// <c>201</c>) cai em <see cref="LoadVerdictResult.Other"/> — contado por PREDICADO PRÓPRIO sobre
+    /// os status observados, nunca por subtração (<c>outcomes.Count - successes - conflicts</c>
+    /// pode ir negativo quando as duas contagens acima se sobrepõem por engano; um <see cref="Count"/>
+    /// sobre um predicado nunca pode). A aprovação exige TODAS as condições ao mesmo tempo:
+    /// exatamente <see cref="N"/> tentativas, exatamente 1 sucesso, exatamente <c>N - 1</c>
+    /// conflitos e <c>Other == 0</c> — redundante aritmeticamente com as três primeiras, mas
+    /// explícito para espelhar C1-C3 da spec sem depender de dedução.
     /// </summary>
     public static LoadVerdictResult Judge(IReadOnlyList<AttemptOutcome> outcomes)
     {
         ArgumentNullException.ThrowIfNull(outcomes);
 
-        var successes = outcomes.Count(outcome => outcome.Created);
-        var conflicts = outcomes.Count(outcome => outcome.StatusCode == 409 && outcome.Code == SlotConflictCode);
-        var other = outcomes.Count - successes - conflicts;
+        var successes = outcomes.Count(IsSuccess);
+        var conflicts = outcomes.Count(IsConflict);
+        var other = outcomes.Count(outcome => !IsSuccess(outcome) && !IsConflict(outcome));
 
         var passed = outcomes.Count == N && successes == 1 && conflicts == N - 1 && other == 0;
 
         return new LoadVerdictResult(passed, successes, conflicts, other);
     }
+
+    /// <summary>C1: só conta como sucesso quando o status OBSERVADO é <c>201</c> — nunca só a intenção informada pelo chamador.</summary>
+    private static bool IsSuccess(AttemptOutcome outcome) => outcome.StatusCode == 201 && outcome.Created;
+
+    /// <summary>C2: exige as duas condições — <c>409</c> E <c>slot_conflict</c> — sobre o status observado.</summary>
+    private static bool IsConflict(AttemptOutcome outcome) => outcome.StatusCode == 409 && outcome.Code == SlotConflictCode;
 }

@@ -28,6 +28,23 @@ public sealed class ReservationDecisionTests
         Assert.Equal(ReservationIntent.Accept, intencao);
     }
 
+    /// <summary>
+    /// Issue 2 do review da T3: um slot EM ANDAMENTO (<c>start &lt;= now &lt; end</c>) é reservável —
+    /// só o FIM decide, nunca o início. Sem este teste, trocar <c>slot.End</c> por <c>slot.Start</c>
+    /// na implementação não quebra nenhum caso: nenhum outro fixture separa as duas extremidades do
+    /// relógio atual (todos os slots "no futuro" têm start E end no futuro; todos "no passado" têm
+    /// start E end no passado). Este é o único caso que discrimina as duas propriedades.
+    /// </summary>
+    [Fact]
+    public void Decide_ComSlotEmAndamentoESemReservaExistente_RetornaAccept()
+    {
+        var slot = NovoSlot(inicioEmHoras: -1, fimEmHoras: 1);
+
+        var intencao = ReservationDecision.Decide(Now, slot, ClientKey, existingForSlot: null);
+
+        Assert.Equal(ReservationIntent.Accept, intencao);
+    }
+
     [Fact]
     public void Decide_ComReservaExistenteDoMesmoCliente_RetornaReplay()
     {
@@ -76,10 +93,9 @@ public sealed class ReservationDecisionTests
     }
 
     /// <summary>
-    /// Documenta a ordem de avaliação (design.md §5, "accept → replay → conflict → not-bookable"):
-    /// o estado de uma reserva JÁ EXISTENTE do mesmo cliente decide Replay independentemente do
-    /// relógio — mesmo que o slot já tenha terminado, reapresentar a confirmação de uma reserva que
-    /// já aconteceu é idempotência, não uma tentativa nova de reservar um slot passado.
+    /// Issue 3 do review da T3, primeira variante: a idempotência do MESMO cliente vence mesmo com o
+    /// slot já terminado — reapresentar a confirmação de uma reserva que já aconteceu é idempotência,
+    /// não uma tentativa nova de reservar um slot passado (design.md §5, precedência atualizada).
     /// </summary>
     [Fact]
     public void Decide_ComReservaExistenteDoMesmoClienteEmSlotJaPassado_AindaRetornaReplay()
@@ -90,6 +106,25 @@ public sealed class ReservationDecisionTests
         var intencao = ReservationDecision.Decide(Now, slot, ClientKey, reservaExistente);
 
         Assert.Equal(ReservationIntent.Replay, intencao);
+    }
+
+    /// <summary>
+    /// Issue 3 do review da T3, segunda variante — a que a implementação anterior errava: spec.md F4
+    /// é explícita, "slot cujo <c>upper(period)</c> ≤ agora ⇒ <c>422</c> <c>slot_not_bookable</c>;
+    /// não é <c>409</c>". Um slot no passado com reserva de OUTRO cliente ainda é
+    /// <see cref="ReservationIntent.NotBookable"/>, nunca <see cref="ReservationIntent.Conflict"/> —
+    /// o relógio vence sobre a existência de reserva alheia, ao contrário do que vence sobre a
+    /// reserva do MESMO cliente (variante acima).
+    /// </summary>
+    [Fact]
+    public void Decide_ComReservaExistenteDeOutroClienteEmSlotJaPassado_RetornaNotBookable()
+    {
+        var slot = NovoSlot(inicioEmHoras: -2, fimEmHoras: -1);
+        var reservaDeOutroCliente = new ReservationSnapshot(Id: 7, ClientKey: OutroClientKey);
+
+        var intencao = ReservationDecision.Decide(Now, slot, ClientKey, reservaDeOutroCliente);
+
+        Assert.Equal(ReservationIntent.NotBookable, intencao);
     }
 
     private static SlotSnapshot NovoSlot(double inicioEmHoras, double fimEmHoras) =>

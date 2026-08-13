@@ -59,17 +59,19 @@ public sealed class SlotAvailabilityTests
     /// O outro lado da mesma fronteira: um fim um único tick DEPOIS de agora ainda não é passado —
     /// discrimina uma implementação que usasse <c>end &lt; now</c> (que teria classificado o caso
     /// acima como não-passado) de uma que usasse <c>end &gt;= now</c> por engano (que classificaria
-    /// este caso como passado, quando não deveria).
+    /// este caso como passado, quando não deveria). Com <c>hasReservation: false</c> o resultado é
+    /// determinístico — <c>Available</c> é a asserção mais forte (review da T3, Issue 4), não só
+    /// "não é Past".
     /// </summary>
     [Fact]
-    public void Classify_QuandoFimEUmTickDepoisDeAgora_NaoRetornaPast()
+    public void Classify_QuandoFimEUmTickDepoisDeAgora_RetornaAvailable()
     {
         var start = Now.AddHours(-1);
         var end = Now.AddTicks(1);
 
         var status = SlotAvailability.Classify(Now, start, end, hasReservation: false);
 
-        Assert.NotEqual(SlotStatus.Past, status);
+        Assert.Equal(SlotStatus.Available, status);
     }
 
     // ---- futuro: reserva decide entre Booked e Available ---------------------------------------
