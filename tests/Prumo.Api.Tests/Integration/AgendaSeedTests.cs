@@ -15,25 +15,30 @@ namespace Prumo.Api.Tests.Integration;
 /// <summary>
 /// Prova AGN-16/J1 (specs/features/met-480-agendamento-concorrencia/spec.md, tasks.md T8): o passo
 /// de agenda do <see cref="SeedRunner"/> (design.md §9) é idempotente sob relógio fixo — segunda
-/// execução não duplica, nunca apaga um slot <c>manual</c> nem um slot com reserva, e deixa pelo
-/// menos um slot futuro LIVRE de encanador.
+/// execução não duplica, nunca apaga um slot <c>manual</c> nem um slot com reserva, deixa pelo menos
+/// um slot futuro LIVRE de encanador, e publica slots para vários profissionais curados ao mesmo
+/// tempo (não só um).
 ///
 /// <para>
-/// <b>Por que os dois <c>[Fact]</c> valem a pena separados:</b> tasks.md ("Cuidado específico") pede
+/// <b>Por que os três <c>[Fact]</c> valem a pena separados:</b> tasks.md ("Cuidado específico") pede
 /// duas provas distintas — "inclusive que um slot COM RESERVA sobrevive à re-execução" e "nunca
 /// apaga slot manual". Cada uma é uma guarda diferente em <c>SeedRunner.DeleteFreeSeedSlotAsync</c>
 /// (<c>NOT EXISTS</c> reserva vs. <c>source = 'seed'</c>) — afrouxar QUALQUER uma isoladamente deixa
-/// exatamente UM destes testes vermelho, nunca os dois pelo mesmo motivo.
+/// exatamente UM destes dois testes vermelho, nunca os dois pelo mesmo motivo. O terceiro
+/// (<c>RunningSeedOnce_PublishesSlotsForAtLeastThreeCuratedProfessionals_IncludingAtLeastOnePlumber</c>,
+/// achado do review) prova o Done-when "≥ 3 profissionais com slots" contra o <see cref="SeedRunner"/>
+/// de verdade — os dois primeiros usam só 1 profissional, então nada neles cobria esse requisito.
 /// </para>
 ///
 /// <para>
-/// A especialidade usada é a <c>encanador</c> REAL (mesmo slug que <c>db/seed/specialties.json</c>
+/// A especialidade <c>encanador</c> usada é a REAL (mesmo slug que <c>db/seed/specialties.json</c>
 /// declara) — necessária porque <c>SeedRunner.RequiredSpecialtySlugForJourney</c> é o literal do
 /// domínio (spec.md D8/J1), não um rótulo arbitrário de teste. Isso é seguro contra colisão com o
 /// corpus real compartilhado pela mesma <see cref="PostgresIntegrationFixture"/> porque o upsert
 /// grava o MESMO <c>name</c> ("Encanador") que o corpus real já usa — uma atualização idêntica, não
-/// uma corrupção; só o <c>professionalSlug</c> (sufixado com <see cref="Guid.NewGuid"/>) precisa ser
-/// exclusivo deste teste, mesma convenção de <c>AgendaSchemaConstraintsTests</c>.
+/// uma corrupção; qualquer outro slug de profissional/especialidade usado nesta classe é sufixado
+/// com <see cref="Guid.NewGuid"/>, exclusivo do teste, mesma convenção de
+/// <c>AgendaSchemaConstraintsTests</c>.
 /// </para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
@@ -95,8 +100,10 @@ public sealed class AgendaSeedTests(PostgresIntegrationFixture fixture)
             var reservationStillExists = await ReservationExistsAsync(reservationId, reservedSlotId, clientKey);
             Assert.True(reservationStillExists, "A reserva não pode ser apagada nem desconectada pela segunda execução do seed.");
 
-            // >= 1 slot futuro LIVRE de encanador (Done-when da T8) depois das duas execuções.
-            var freeSlotCount = await CountFreeSeedSlotsAsync(professionalId);
+            // >= 1 slot futuro LIVRE de encanador (Done-when da T8) depois das duas execuções — "futuro"
+            // julgado pelo MESMO relógio injetado no seed (FixedNow), nunca por now() do Postgres (ver
+            // XML-doc de CountFreeSeedSlotsAsync: é exatamente o bug que este teste existe para não ter).
+            var freeSlotCount = await CountFreeSeedSlotsAsync(professionalId, FixedNow);
             Assert.True(freeSlotCount >= 1, "Esperado >= 1 slot futuro livre de encanador após duas execuções do seed.");
         }
         finally
@@ -147,6 +154,77 @@ public sealed class AgendaSeedTests(PostgresIntegrationFixture fixture)
         finally
         {
             await CleanupAsync(professionalSlug);
+            File.Delete(specialtiesPath);
+            File.Delete(professionalsPath);
+        }
+    }
+
+    /// <summary>
+    /// Issue 3 do review da T8: os dois testes acima usam só 1 profissional curado — nada provava
+    /// que o passo de agenda publica slots para VÁRIOS profissionais ao mesmo tempo, como o Done-when
+    /// exige ("≥ 3 profissionais com slots, incluindo ≥ 1 da especialidade encanador"). Aqui: 3
+    /// profissionais curados, 2 <c>encanador</c> (o slug real/compartilhado) + 1 de outra
+    /// especialidade (sufixada, exclusiva deste teste) — o MESMO <see cref="SeedRunner"/> que a
+    /// produção usa, não uma verificação isolada da constante.
+    /// </summary>
+    [Fact]
+    public async Task RunningSeedOnce_PublishesSlotsForAtLeastThreeCuratedProfessionals_IncludingAtLeastOnePlumber()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var otherSpecialtySlug = $"pintor-agenda-seed-{suffix}";
+
+        var professionals = new (string Slug, string SpecialtySlug)[]
+        {
+            ($"ana-ribeiro-agenda-seed-three-{suffix}", "encanador"),
+            ($"joao-gomes-agenda-seed-three-{suffix}", "encanador"),
+            ($"priscila-lopes-agenda-seed-three-{suffix}", otherSpecialtySlug),
+        };
+
+        var (specialtiesPath, professionalsPath) = WriteCorpusFixture(professionals);
+        var timeProvider = new FixedTimeProvider(FixedNow);
+        var options = new SeedRunnerOptions
+        {
+            SpecialtiesPath = specialtiesPath,
+            ProfessionalsPath = professionalsPath,
+            AgendaProfessionalSlugs = professionals.Select(professional => professional.Slug).ToArray(),
+        };
+
+        try
+        {
+            var summary = await RunSeedAsync(timeProvider, options);
+
+            // 3 profissionais x 15 janelas cada — nenhum atalho: os 45 inserts de verdade aconteceram.
+            Assert.Equal(45, summary.AgendaSlotsPublished);
+
+            var slugsWithFifteenSeedSlots = new List<string>();
+            foreach (var (slug, _) in professionals)
+            {
+                var professionalId = await ReadProfessionalIdAsync(slug);
+                var slotIds = await ReadSlotIdsAsync(professionalId, sourceFilter: "seed");
+
+                Assert.Equal(15, slotIds.Count);
+                slugsWithFifteenSeedSlots.Add(slug);
+            }
+
+            Assert.True(
+                slugsWithFifteenSeedSlots.Count >= 3,
+                $"Esperado >= 3 profissionais com slots publicados; achou {slugsWithFifteenSeedSlots.Count}.");
+
+            var plumberSlugs = professionals
+                .Where(professional => professional.SpecialtySlug == "encanador")
+                .Select(professional => professional.Slug)
+                .ToList();
+
+            Assert.True(plumberSlugs.Count >= 1, "A fixture deste teste precisa ter >= 1 encanador.");
+            Assert.All(plumberSlugs, slug => Assert.Contains(slug, slugsWithFifteenSeedSlots));
+        }
+        finally
+        {
+            foreach (var (slug, _) in professionals)
+            {
+                await CleanupAsync(slug);
+            }
+
             File.Delete(specialtiesPath);
             File.Delete(professionalsPath);
         }
@@ -268,7 +346,16 @@ public sealed class AgendaSeedTests(PostgresIntegrationFixture fixture)
         return count == 1;
     }
 
-    private async Task<long> CountFreeSeedSlotsAsync(long professionalId)
+    /// <summary>
+    /// "Livre e futuro" julgado pelo instante EXPLICITAMENTE passado em <paramref name="asOf"/> —
+    /// NUNCA pelo <c>now()</c> do Postgres (achado do reviewer: o seed constrói as 15 janelas a
+    /// partir do relógio FIXO injetado no <see cref="SeedRunner"/>, então a asserção de "ainda é
+    /// futuro" tem que julgar contra ESSE MESMO instante; comparar contra o relógio de parede real
+    /// faz este teste morrer sozinho assim que o relógio real ultrapassar o fim das janelas fixas —
+    /// exatamente o modo de falha que o Done-when "horários relativos a TimeProvider, não datas
+    /// cravadas" existe para evitar, só que reaparecendo na RÉGUA em vez de no código do seed).
+    /// </summary>
+    private async Task<long> CountFreeSeedSlotsAsync(long professionalId, DateTimeOffset asOf)
     {
         await using var connection = await OpenConnectionAsync();
 
@@ -278,12 +365,13 @@ public sealed class AgendaSeedTests(PostgresIntegrationFixture fixture)
             FROM availability_slots AS slot
             WHERE slot.professional_id = @professional_id
               AND slot.source = 'seed'
-              AND upper(slot.period) > now()
+              AND upper(slot.period) > @as_of
               AND NOT EXISTS (
                   SELECT 1 FROM reservations AS reservation WHERE reservation.slot_id = slot.id
               );
             """;
         command.Parameters.AddWithValue("professional_id", professionalId);
+        command.Parameters.Add(new NpgsqlParameter("as_of", NpgsqlDbType.TimestampTz) { Value = asOf });
 
         return (long)(await command.ExecuteScalarAsync())!;
     }
@@ -348,37 +436,56 @@ public sealed class AgendaSeedTests(PostgresIntegrationFixture fixture)
         await deleteProfessional.ExecuteNonQueryAsync();
     }
 
-    private static (string SpecialtiesPath, string ProfessionalsPath) WriteCorpusFixture(string professionalSlug)
+    /// <summary>
+    /// Fixture de UM profissional, especialidade <c>encanador</c> (ver XML-doc da classe) — usada
+    /// pelos dois testes de idempotência, que só precisam de um profissional curado.
+    /// </summary>
+    private static (string SpecialtiesPath, string ProfessionalsPath) WriteCorpusFixture(string professionalSlug) =>
+        WriteCorpusFixture([(professionalSlug, "encanador")]);
+
+    /// <summary>
+    /// Fixture com N profissionais, cada um com a <c>SpecialtySlug</c> informada (Issue 3 do review
+    /// da T8: prova de que o passo de agenda publica slots para VÁRIOS profissionais curados, não só
+    /// um). O slug <c>encanador</c> é sempre o REAL/compartilhado (ver XML-doc da classe); qualquer
+    /// outra especialidade usada aqui precisa ser exclusiva do teste chamador (sufixada), para não
+    /// colidir com o corpus real compartilhado pela mesma <see cref="PostgresIntegrationFixture"/>.
+    /// </summary>
+    private static (string SpecialtiesPath, string ProfessionalsPath) WriteCorpusFixture(
+        IReadOnlyList<(string Slug, string SpecialtySlug)> professionals)
     {
+        var specialtySlugs = professionals.Select(professional => professional.SpecialtySlug).Distinct(StringComparer.Ordinal).ToList();
+
         var specialtiesPayload = new
         {
             _note = "Dados FICTÍCIOS de teste (AgendaSeedTests) — nunca versionados em db/seed/.",
-            specialties = new[]
-            {
-                // Slug REAL 'encanador' de propósito — ver XML-doc da classe.
-                new { slug = "encanador", name = "Encanador", corpusSynonyms = new[] { "encanador" } },
-            },
+            specialties = specialtySlugs
+                .Select(slug => new
+                {
+                    slug,
+                    name = slug == "encanador" ? "Encanador" : $"Especialidade Teste {slug}",
+                    corpusSynonyms = new[] { slug },
+                })
+                .ToArray(),
         };
 
         var professionalsPayload = new
         {
             _note = "Dados FICTÍCIOS de teste (AgendaSeedTests) — nunca versionados em db/seed/.",
-            professionals = new[]
-            {
-                new
+            professionals = professionals
+                .Select((professional, index) => new
                 {
-                    slug = professionalSlug,
-                    fullName = "Fulano de Tal Agenda Seed",
-                    specialtySlug = "encanador",
+                    slug = professional.Slug,
+                    fullName = $"Fulano de Tal Agenda Seed {index}",
+                    specialtySlug = professional.SpecialtySlug,
                     serviceDescription =
-                        "Descrição sintética de teste para AgendaSeedTests, usada só para provar idempotência do passo de agenda.",
+                        $"Descrição sintética de teste (índice {index}) para AgendaSeedTests, usada só para provar o passo de agenda.",
                     city = "Belo Horizonte",
                     state = "MG",
                     latitude = -19.9245,
                     longitude = -43.9352,
                     serviceRadiusKm = 20,
-                },
-            },
+                })
+                .ToArray(),
         };
 
         var specialtiesPath = Path.Combine(Path.GetTempPath(), $"prumo-agenda-seed-specialties-{Guid.NewGuid():N}.json");
