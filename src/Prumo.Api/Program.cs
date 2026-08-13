@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 
 using Microsoft.EntityFrameworkCore;
 
+using Prumo.Api.Agenda;
 using Prumo.Api.Agenda.Defenses;
 using Prumo.Api.Data;
 using Prumo.Api.Embeddings;
@@ -141,6 +142,11 @@ api.MapGet("/health/db", async Task<IResult> (
 // devolve o resultado já explicado. A única linha desta feature em Program.cs — o resto mora em
 // Search/SearchEndpoints.cs.
 api.MapSearch();
+
+// GET /api/professionals/{slug}/slots (MET-480 T9, design.md §8): lista a agenda com o status já
+// calculado no servidor. Mesmo padrão de MapSearch() — uma única linha aqui, o resto mora em
+// Agenda/AgendaEndpoints.cs.
+api.MapAgenda();
 
 app.Run();
 
