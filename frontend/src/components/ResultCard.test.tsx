@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { SearchRankingInfo, SearchResultItem } from '../api/search'
 import { ResultCard } from './ResultCard'
@@ -61,14 +61,14 @@ const RESULT_WITHOUT_LOCATION: SearchResultItem = {
 
 describe('ResultCard', () => {
   it('exibe nome, especialidade e cidade/UF exatamente como veio da API', () => {
-    render(<ResultCard result={RESULT_WITH_LOCATION} ranking={RANKING} />)
+    render(<ResultCard result={RESULT_WITH_LOCATION} ranking={RANKING} onViewSlots={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: 'Ana Ribeiro' })).toBeDefined()
     expect(screen.getByText('Encanador · Belo Horizonte, MG')).toBeDefined()
   })
 
   it('com localização: mostra distância, score e a decomposição formatados — sem recalcular nada', () => {
-    render(<ResultCard result={RESULT_WITH_LOCATION} ranking={RANKING} />)
+    render(<ResultCard result={RESULT_WITH_LOCATION} ranking={RANKING} onViewSlots={vi.fn()} />)
 
     // formatDistanceKm/formatScore (pt-BR, vírgula decimal) — os números são os do fixture, ponto.
     expect(screen.getByText('3,4 km')).toBeDefined()
@@ -81,7 +81,7 @@ describe('ResultCard', () => {
   })
 
   it('sem localização: não mostra distância, nem multiplica a relevância por peso nenhum', () => {
-    render(<ResultCard result={RESULT_WITHOUT_LOCATION} ranking={RANKING} />)
+    render(<ResultCard result={RESULT_WITHOUT_LOCATION} ranking={RANKING} onViewSlots={vi.fn()} />)
 
     expect(screen.queryByText(/km$/)).toBeNull()
     expect(screen.queryByText(/× peso/)).toBeNull()
@@ -90,5 +90,26 @@ describe('ResultCard', () => {
     expect(
       screen.getByText('0,85 (sem localização, o score considera só a relevância)'),
     ).toBeDefined()
+  })
+
+  // MET-480 T13 (spec.md AGN-13/J1/J6): "Ver horários" precisa ser um LINK de verdade (foco e
+  // Enter nativos do teclado — nenhum handler de tecla escrito à mão) com nome acessível que
+  // identifica QUAL profissional, não só o texto genérico do botão.
+  it('"Ver horários" é um link focável, com nome acessível por profissional e href para /profissional/:slug', () => {
+    render(<ResultCard result={RESULT_WITH_LOCATION} ranking={RANKING} onViewSlots={vi.fn()} />)
+
+    const link = screen.getByRole('link', { name: 'Ver horários de Ana Ribeiro' })
+    expect(link.getAttribute('href')).toBe('/profissional/ana-ribeiro-bh-01')
+    expect(screen.getByText('Ver horários')).toBeDefined()
+  })
+
+  it('clicar em "Ver horários" aciona onViewSlots com o slug do resultado, sem navegar a página inteira', () => {
+    const onViewSlots = vi.fn()
+    render(<ResultCard result={RESULT_WITH_LOCATION} ranking={RANKING} onViewSlots={onViewSlots} />)
+
+    fireEvent.click(screen.getByRole('link', { name: 'Ver horários de Ana Ribeiro' }))
+
+    expect(onViewSlots).toHaveBeenCalledTimes(1)
+    expect(onViewSlots).toHaveBeenCalledWith('ana-ribeiro-bh-01')
   })
 })
