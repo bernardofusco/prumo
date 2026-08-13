@@ -94,12 +94,25 @@ public sealed class ExclusionDefense(PrumoDbContext dbContext, TimeProvider time
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException exception)
+        catch (Exception exception)
         {
-            // Confirmado via LIBDOCS (context7, /dotnet/entityframework.docs): "all database
-            // exceptions from SaveChanges are wrapped in DbUpdateException" — o mesmo caminho que
-            // ReservationConflictMapperTests já exercita (DbUpdateException embrulhando
-            // PostgresException).
+            // ADR-008 (achado ao vivo, não assumido — N=20 concorrentes, ReserveEndpointTests
+            // isolado contra container frio): "all database exceptions from SaveChanges are wrapped
+            // in DbUpdateException" (LIBDOCS, context7 /dotnet/entityframework.docs) é verdade para
+            // 23P01/23505, mas NÃO é o embrulho inteiro sob deadlock (40P01). PostgresException.
+            // IsTransient é true para deadlock_detected mesmo SEM EnableRetryOnFailure configurado
+            // (Program.cs não configura retry); o ExecutionStrategy do EF Core ainda assim embrulha
+            // esse caso específico num InvalidOperationException ADICIONAL de nível superior ("An
+            // exception has been raised that is likely due to a transient failure...") — um
+            // InvalidOperationException NÃO é DbUpdateException nem deriva dela, então um
+            // `catch (DbUpdateException)` aqui deixava o 40P01 escapar DIRETO para o
+            // GlobalExceptionHandler sem nunca passar por ReservationConflictMapper.Map — o próprio
+            // buraco que a T10 mediu (1 sucesso + 19×503) e que motivou a ADR-008. Captura-se
+            // Exception de propósito: ReservationConflictMapper.Map já relança (via
+            // ExceptionDispatchInfo, preservando tipo/stack) qualquer exceção cuja cadeia não
+            // contenha um dos SqlStates conhecidos — inclusive OperationCanceledException e
+            // qualquer bug de aplicação —, então alargar este catch não muda o comportamento
+            // observável de nenhum caso que já funcionava, só deixa de perder o 40P01 no caminho.
             return await HandleInsertFailureAsync(exception, request, cancellationToken);
         }
 
@@ -107,14 +120,22 @@ public sealed class ExclusionDefense(PrumoDbContext dbContext, TimeProvider time
     }
 
     /// <summary>
-    /// design.md §7: "quem chama já executou o SELECT pela slot_id depois do 23P01 e informa o
-    /// resultado em winningClientKey". A MESMA consulta cobre também o 23505 (UNIQUE de
-    /// idempotência) — <see cref="ReservationConflictMapper.Map"/> ignora o vencedor lido nesse ramo
-    /// (documentado no XML-doc do mapper), então reler aqui não muda o resultado, só simplifica: um
-    /// único ponto de leitura pós-falha para os dois <c>SqlState</c> conhecidos.
+    /// design.md §7/ADR-008: "quem chama já executou o SELECT pela slot_id depois da falha e informa
+    /// o resultado em winningClientKey". A MESMA consulta cobre <c>23P01</c>, <c>40P01</c> (ADR-008)
+    /// e <c>23505</c> (UNIQUE de idempotência) — <see cref="ReservationConflictMapper.Map"/> ignora o
+    /// vencedor lido no ramo da UNIQUE (documentado no XML-doc do mapper), então reler aqui não muda
+    /// o resultado, só simplifica: um único ponto de leitura pós-falha para os três <c>SqlState</c>
+    /// conhecidos.
+    ///
+    /// <para>
+    /// <paramref name="exception"/> é <see cref="Exception"/>, não <c>DbUpdateException</c> (ver o
+    /// <c>catch</c> em <see cref="TryReserveAsync"/> para o porquê — o embrulho extra do <c>40P01</c>,
+    /// ADR-008): <see cref="ReservationConflictMapper.Map"/> percorre a cadeia inteira de qualquer
+    /// forma, então o tipo estático de topo não importa para a classificação.
+    /// </para>
     /// </summary>
     private async Task<DefenseResult> HandleInsertFailureAsync(
-        DbUpdateException exception, ReservationRequest request, CancellationToken cancellationToken)
+        Exception exception, ReservationRequest request, CancellationToken cancellationToken)
     {
         var winningReservation = await ReadReservationForSlotAsync(request.SlotId, cancellationToken);
 

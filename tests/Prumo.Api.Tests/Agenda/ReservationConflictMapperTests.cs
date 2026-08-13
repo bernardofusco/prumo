@@ -9,16 +9,20 @@ using Prumo.Api.Agenda.Scheduling;
 namespace Prumo.Api.Tests.Agenda;
 
 /// <summary>
-/// <see cref="ReservationConflictMapper.Map"/> (spec.md D5, design.md §7, tasks.md T4) — o tradutor
-/// que impede a violação de <c>EXCLUDE</c>/<c>UNIQUE</c> de <c>reservations</c> de chegar ao
-/// <see cref="Prumo.Api.ErrorHandling.GlobalExceptionHandler"/> (que continuaria classificando-a como
-/// <c>503</c>, ver <c>Prumo.Api.Tests.ErrorHandling.ExclusionViolationThroughHandlerTests</c>, AGN-12).
+/// <see cref="ReservationConflictMapper.Map"/> (spec.md D5, design.md §7, tasks.md T4, ADR-008) — o
+/// tradutor que impede a violação de <c>EXCLUDE</c>/<c>UNIQUE</c> de <c>reservations</c> — e, desde
+/// ADR-008, o DEADLOCK (<c>40P01</c>) da disputa pela mesma EXCLUDE sob alta concorrência — de chegar
+/// ao <see cref="Prumo.Api.ErrorHandling.GlobalExceptionHandler"/> (que continuaria classificando-a
+/// como <c>503</c>, ver <c>Prumo.Api.Tests.ErrorHandling.ExclusionViolationThroughHandlerTests</c>,
+/// AGN-12).
 ///
 /// <para>
 /// <b>Exceções REAIS, não fabricadas só com o nome do tipo certo</b> (mesma disciplina de
 /// <c>GlobalExceptionHandlerTests</c>): todo <see cref="PostgresException"/> abaixo usa o construtor
-/// público do Npgsql 10.0.3 com <c>SqlState</c>/<c>ConstraintName</c> genuínos — um mutante que
-/// trocasse a checagem de <c>ConstraintName</c> por "qualquer <c>23P01</c>" (ou vice-versa) fica
+/// público do Npgsql 10.0.3 com <c>SqlState</c>/<c>ConstraintName</c> genuínos — inclusive
+/// <c>ConstraintName: null</c> nos casos de <c>40P01</c>, confirmado ao vivo (Postgres real, N=20
+/// concorrentes, container frio) que é exatamente o que o Postgres devolve para deadlock: um mutante
+/// que trocasse a checagem de <c>ConstraintName</c> por "qualquer <c>23P01</c>" (ou vice-versa) fica
 /// vermelho aqui.
 /// </para>
 ///
@@ -65,6 +69,71 @@ public sealed class ReservationConflictMapperTests
         var exception = WrapInDbUpdateException(NewExclusionViolation());
 
         var resultado = ReservationConflictMapper.Map(exception, RequestingClientKey, winningClientKey: null);
+
+        Assert.Equal(ReservationConflictOutcome.Conflict, resultado);
+    }
+
+    // ---- 40P01 (deadlock) na mesma disputa pela EXCLUDE — ADR-008 ---------------------------------
+
+    /// <summary>
+    /// ADR-008: sob N=20 concorrentes no mesmo intervalo, o Postgres recusa as perdedoras por
+    /// DEADLOCK (<c>40P01</c>), não por violação de exclusão provada (<c>23P01</c>) — o caminho
+    /// ESPERADO sob alta contenção (ver XML-doc de <c>ReservationConflictMapper.IsExclusionDisputeOnReservations</c>).
+    /// Mesma decisão do <c>23P01</c>: mesmo cliente vencedor ⇒ Replay.
+    /// </summary>
+    [Fact]
+    public void Map_Com40P01EMesmoClientKeyDaRequisicao_RetornaReplay()
+    {
+        var exception = WrapInDbUpdateException(NewDeadlockDetected());
+
+        var resultado = ReservationConflictMapper.Map(exception, RequestingClientKey, winningClientKey: RequestingClientKey);
+
+        Assert.Equal(ReservationConflictOutcome.Replay, resultado);
+    }
+
+    [Fact]
+    public void Map_Com40P01EClientKeyDeOutroCliente_RetornaConflict()
+    {
+        var exception = WrapInDbUpdateException(NewDeadlockDetected());
+
+        var resultado = ReservationConflictMapper.Map(exception, RequestingClientKey, winningClientKey: OutroClientKey);
+
+        Assert.Equal(ReservationConflictOutcome.Conflict, resultado);
+    }
+
+    /// <summary>
+    /// Mesmo racional do "ninguém" do <c>23P01</c> (ver <see cref="Map_ComExclusionViolationSemNinguemEncontradoNaBusca_RetornaConflict"/>):
+    /// anômalo, tratado como Conflict, NUNCA relançado — relançar aqui reintroduziria exatamente o
+    /// buraco que ADR-008 corrige (503 no lugar de 409, C3 furado).
+    /// </summary>
+    [Fact]
+    public void Map_Com40P01SemNinguemEncontradoNaBusca_RetornaConflict()
+    {
+        var exception = WrapInDbUpdateException(NewDeadlockDetected());
+
+        var resultado = ReservationConflictMapper.Map(exception, RequestingClientKey, winningClientKey: null);
+
+        Assert.Equal(ReservationConflictOutcome.Conflict, resultado);
+    }
+
+    /// <summary>
+    /// O embrulho REAL de <c>40P01</c> observado ao vivo (ADR-008, ver XML-doc da classe
+    /// <c>ReservationConflictMapper</c>): <c>InvalidOperationException</c> ("An exception has been
+    /// raised that is likely due to a transient failure...", produzido pelo <c>ExecutionStrategy</c>
+    /// do EF Core porque <c>PostgresException.IsTransient</c> é <see langword="true"/> para
+    /// <c>deadlock_detected</c> mesmo sem <c>EnableRetryOnFailure</c>) → <c>DbUpdateException</c> →
+    /// <see cref="PostgresException"/> — TRÊS níveis, um a mais que o caminho de <c>23P01</c>/<c>23505</c>.
+    /// Prova que a busca por <see cref="PostgresException"/> alcança essa profundidade extra.
+    /// </summary>
+    [Fact]
+    public void Map_Com40P01EmbrulhadoComoOExecutionStrategyDoEfCoreRealmenteEmbrulha_AindaClassificaCorretamente()
+    {
+        var deadlock = NewDeadlockDetected();
+        var dbUpdateException = WrapInDbUpdateException(deadlock);
+        var exception = new InvalidOperationException(
+            "An exception has been raised that is likely due to a transient failure.", dbUpdateException);
+
+        var resultado = ReservationConflictMapper.Map(exception, RequestingClientKey, winningClientKey: OutroClientKey);
 
         Assert.Equal(ReservationConflictOutcome.Conflict, resultado);
     }
@@ -137,7 +206,7 @@ public sealed class ReservationConflictMapperTests
         Assert.Equal(ReservationConflictOutcome.Replay, resultado);
     }
 
-    // ---- não engole nada que não seja EXATAMENTE uma destas duas constraints ---------------------
+    // ---- não engole nada que não seja EXATAMENTE um destes três SqlStates conhecidos --------------
 
     /// <summary>
     /// Mesmo <c>SqlState</c> <c>23P01</c>, mas a constraint de OUTRA tabela
@@ -249,6 +318,21 @@ public sealed class ReservationConflictMapperTests
         invariantSeverity: "ERROR",
         sqlState: PostgresErrorCodes.UniqueViolation,
         constraintName: ReservationConflictMapper.UniqueConstraintName);
+
+    /// <summary>
+    /// <c>constraintName: null</c> É O COMPORTAMENTO REAL (ADR-008, confirmado ao vivo — Postgres
+    /// real, N=20 concorrentes, container frio): o detector de deadlock aborta a transação ANTES de
+    /// identificar uma constraint específica; só <c>Where</c> ("while checking exclusion constraint
+    /// on tuple (…) in relation \"reservations\"") e <c>Routine</c> ("DeadLockReport") chegam
+    /// preenchidos. Fabricar este teste com um <c>constraintName</c> não-nulo estaria testando um
+    /// cenário que o Postgres nunca produz para <c>40P01</c>.
+    /// </summary>
+    private static PostgresException NewDeadlockDetected() => new(
+        messageText: "deadlock detected",
+        severity: "ERROR",
+        invariantSeverity: "ERROR",
+        sqlState: PostgresErrorCodes.DeadlockDetected,
+        constraintName: null);
 
     private static DbUpdateException WrapInDbUpdateException(PostgresException postgresException) =>
         new("não foi possível salvar a reserva", postgresException);
