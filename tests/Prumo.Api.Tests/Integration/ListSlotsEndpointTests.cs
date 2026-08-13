@@ -14,6 +14,8 @@ using NpgsqlTypes;
 
 using Prumo.Api.Data;
 using Prumo.Api.Data.Entities;
+using Prumo.Api.Embeddings;
+using Prumo.Seed.Ingestion;
 
 namespace Prumo.Api.Tests.Integration;
 
@@ -172,6 +174,172 @@ public sealed class ListSlotsEndpointTests(PostgresIntegrationFixture fixture)
         var body = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(body);
         Assert.Equal("invalid_request", document.RootElement.GetProperty("code").GetString());
+    }
+
+    // ---- T9 Done-when: "encanador do seed tem >= 1 available" (achado do reviewer, MET-480 Fase 4) --
+
+    /// <summary>
+    /// Os testes acima usam um cenário sintético PRÓPRIO (<see cref="CreateScenarioAsync"/>) — nunca
+    /// o passo de agenda do <see cref="SeedRunner"/> (tasks.md T8/T9, spec.md J1). O "Done when" da T9
+    /// pede literalmente: "encanador do seed tem >= 1 available com relógio compatível com o seed" —
+    /// este teste RODA o <see cref="SeedRunner"/> de verdade (mesmo mecanismo de
+    /// <c>AgendaSeedTests</c>, não uma reimplementação) contra um profissional <c>encanador</c> (a
+    /// especialidade REAL/compartilhada — <c>AgendaSeedTests</c> documenta por que isso é seguro
+    /// contra o corpus real da mesma <see cref="PostgresIntegrationFixture"/>), depois chama
+    /// <c>GET /api/professionals/{slug}/slots</c> pelo <see cref="WebApplicationFactory{TEntryPoint}"/>
+    /// desta classe.
+    ///
+    /// <para>
+    /// <b>Um relógio só, do seed até a asserção</b> (a MESMA lição que reprovou a T8, ver XML-doc de
+    /// <c>AgendaSeedTests.CountFreeSeedSlotsAsync</c>): <see cref="SeedFixedNow"/> é passado ao
+    /// <see cref="SeedRunner"/> (via <see cref="SeedFixedTimeProvider"/>) para CONSTRUIR as janelas, e
+    /// ao <see cref="CreateFactory"/> desta classe para o handler CLASSIFICAR <c>status</c> — nunca
+    /// <c>now()</c> do Postgres nem o relógio de parede real dos dois lados.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task GetSlots_ForAPlumberSeededByTheRealSeedRunner_HasAtLeastOneAvailableSlot()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var professionalSlug = $"seed-encanador-list-slots-{suffix}";
+
+        var (specialtiesPath, professionalsPath) = WriteSeedCorpusFixture(professionalSlug);
+        var seedTimeProvider = new SeedFixedTimeProvider(SeedFixedNow);
+
+        try
+        {
+            var summary = await RunAgendaSeedAsync(seedTimeProvider, specialtiesPath, professionalsPath, professionalSlug);
+            Assert.True(summary.AgendaSlotsPublished > 0, "O SeedRunner precisa ter publicado ao menos um slot para este encanador.");
+
+            // MESMO relógio (SeedFixedNow) usado para o seed acima — ver XML-doc do método.
+            await using var factory = CreateFactory(fixture.ConnectionString, SeedFixedNow);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync(new Uri($"/api/professionals/{professionalSlug}/slots", UriKind.Relative));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+
+            Assert.Equal("Encanador", document.RootElement.GetProperty("professional").GetProperty("specialty").GetString());
+
+            var slots = document.RootElement.GetProperty("slots").EnumerateArray().ToList();
+            var availableCount = slots.Count(slot => slot.GetProperty("status").GetString() == "available");
+
+            Assert.True(
+                availableCount >= 1,
+                $"Esperado >= 1 slot 'available' do encanador do seed na janela default; achou {availableCount} entre {slots.Count} slots.");
+        }
+        finally
+        {
+            await CleanupSeedScenarioAsync(professionalSlug);
+            File.Delete(specialtiesPath);
+            File.Delete(professionalsPath);
+        }
+    }
+
+    /// <summary>Instante sintético fixo, só para este teste — não compartilhado com <see cref="FixedNow"/> (o cenário sintético dos outros testes desta classe).</summary>
+    private static readonly DateTimeOffset SeedFixedNow = new(2034, 9, 6, 15, 0, 0, TimeSpan.Zero);
+
+    private async Task<SeedSummary> RunAgendaSeedAsync(
+        TimeProvider timeProvider, string specialtiesPath, string professionalsPath, string professionalSlug)
+    {
+        var options = new SeedRunnerOptions
+        {
+            SpecialtiesPath = specialtiesPath,
+            ProfessionalsPath = professionalsPath,
+            AgendaProfessionalSlugs = [professionalSlug],
+        };
+
+        await using var dbContext = CreateContext();
+        var runner = new SeedRunner(dbContext, new HashingEmbeddingProvider(), timeProvider, options);
+
+        return await runner.RunAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Mesmo formato de <c>AgendaSeedTests.WriteCorpusFixture</c> (JSON temporário, nunca versionado):
+    /// um único profissional <c>encanador</c> — a especialidade REAL/compartilhada (ver XML-doc do
+    /// teste que usa este método).
+    /// </summary>
+    private static (string SpecialtiesPath, string ProfessionalsPath) WriteSeedCorpusFixture(string professionalSlug)
+    {
+        var serializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+        var specialtiesPayload = new
+        {
+            _note = "Dados FICTÍCIOS de teste (ListSlotsEndpointTests) — nunca versionados em db/seed/.",
+            specialties = new[] { new { slug = "encanador", name = "Encanador", corpusSynonyms = new[] { "encanador" } } },
+        };
+
+        var professionalsPayload = new
+        {
+            _note = "Dados FICTÍCIOS de teste (ListSlotsEndpointTests) — nunca versionados em db/seed/.",
+            professionals = new[]
+            {
+                new
+                {
+                    slug = professionalSlug,
+                    fullName = "Fulano de Tal Seed List Slots",
+                    specialtySlug = "encanador",
+                    serviceDescription =
+                        "Descrição sintética de teste, usada só para provar GET .../slots contra o SeedRunner de verdade (T9).",
+                    city = "Belo Horizonte",
+                    state = "MG",
+                    latitude = -19.9245,
+                    longitude = -43.9352,
+                    serviceRadiusKm = 20,
+                },
+            },
+        };
+
+        var specialtiesPath = Path.Combine(Path.GetTempPath(), $"prumo-list-slots-seed-specialties-{Guid.NewGuid():N}.json");
+        var professionalsPath = Path.Combine(Path.GetTempPath(), $"prumo-list-slots-seed-professionals-{Guid.NewGuid():N}.json");
+
+        File.WriteAllText(specialtiesPath, JsonSerializer.Serialize(specialtiesPayload, serializerOptions));
+        File.WriteAllText(professionalsPath, JsonSerializer.Serialize(professionalsPayload, serializerOptions));
+
+        return (specialtiesPath, professionalsPath);
+    }
+
+    private async Task CleanupSeedScenarioAsync(string professionalSlug)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync();
+
+        await using (var deleteReservations = connection.CreateCommand())
+        {
+            deleteReservations.CommandText = """
+                DELETE FROM reservations
+                WHERE professional_id = (SELECT id FROM professionals WHERE slug = @slug);
+                """;
+            deleteReservations.Parameters.AddWithValue("slug", professionalSlug);
+            await deleteReservations.ExecuteNonQueryAsync();
+        }
+
+        await using (var deleteSlots = connection.CreateCommand())
+        {
+            deleteSlots.CommandText = """
+                DELETE FROM availability_slots
+                WHERE professional_id = (SELECT id FROM professionals WHERE slug = @slug);
+                """;
+            deleteSlots.Parameters.AddWithValue("slug", professionalSlug);
+            await deleteSlots.ExecuteNonQueryAsync();
+        }
+
+        // A especialidade 'encanador' NUNCA é apagada aqui — é o corpus real compartilhado por toda a
+        // collection Integration (mesmo cuidado de AgendaSeedTests.CleanupAsync).
+        await using var deleteProfessional = connection.CreateCommand();
+        deleteProfessional.CommandText = "DELETE FROM professionals WHERE slug = @slug;";
+        deleteProfessional.Parameters.AddWithValue("slug", professionalSlug);
+        await deleteProfessional.ExecuteNonQueryAsync();
+    }
+
+    /// <summary><see cref="TimeProvider"/> de teste (nunca <see cref="DateTime.Now"/>) — mesma convenção de <c>AgendaSeedTests.FixedTimeProvider</c>.</summary>
+    private sealed class SeedFixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     // ---- infraestrutura do teste ------------------------------------------------------------------

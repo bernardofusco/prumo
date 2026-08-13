@@ -41,6 +41,13 @@ if (builder.Configuration[EmbeddingProviderRegistration.ProviderConfigurationKey
 // completo. Ver XML-doc de SearchEndpoints.ConfigureProblemDetails para os dois.
 builder.Services.AddProblemDetails(SearchEndpoints.ConfigureProblemDetails);
 
+// Corpo malformado/tipo errado em POST /api/reservations ou POST /api/professionals/{slug}/slots
+// (MET-480 Fase 4, achado do reviewer): registrado ANTES de GlobalExceptionHandler DE PROPÓSITO —
+// múltiplos IExceptionHandler rodam na ORDEM DE REGISTRO, primeira implementação que devolver true
+// "vence" (ver XML-doc de AgendaRequestBodyExceptionHandler). GlobalExceptionHandler permanece
+// intocado: qualquer exceção que não seja esse caso específico continua caindo nele, como antes.
+builder.Services.AddExceptionHandler<AgendaRequestBodyExceptionHandler>();
+
 // Tratamento global de exceção (MET-530): GlobalExceptionHandler classifica falha de infraestrutura
 // de banco (503, mesmo vocabulário de /api/health/db) vs. qualquer outra exceção não tratada (500) —
 // nunca tipo .NET, mensagem de provider nem stack trace no corpo, em nenhum ambiente. Ativado logo
