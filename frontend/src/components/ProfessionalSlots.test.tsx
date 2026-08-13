@@ -251,4 +251,19 @@ describe('ProfessionalSlots', () => {
 
     expect(onNavigate).toHaveBeenCalledWith({ kind: 'search' })
   })
+
+  // MET-480 T14 (tasks.md "Done when": "link 'configurar horários'... com rótulo explícito").
+  it('link "Configurar horários" leva à agenda do profissional (rótulo explícito, sem react-router)', async () => {
+    fetchProfessionalSlotsMock.mockResolvedValue(slotsSuccess([AVAILABLE_SLOT]))
+    const onNavigate = vi.fn()
+
+    render(<ProfessionalSlots slug="ana-ribeiro-bh-01" onNavigate={onNavigate} />)
+
+    const link = await screen.findByRole('link', { name: 'Configurar horários desta agenda (demonstração sem login)' })
+    expect(link.getAttribute('href')).toBe('/profissional/ana-ribeiro-bh-01/agenda')
+
+    fireEvent.click(link)
+
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'professionalAgenda', slug: 'ana-ribeiro-bh-01' })
+  })
 })

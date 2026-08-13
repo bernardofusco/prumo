@@ -331,6 +331,98 @@ select {
   margin-top: 1.5rem;
 }
 
+.professional-slots__agenda-link {
+  margin: 0 0 1.5rem;
+}
+
+/* ---- ProfessionalAgenda (MET-480 T14) ------------------------------------------------------------ */
+
+.professional-agenda {
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.professional-agenda__back {
+  margin: 0 0 1.5rem;
+}
+
+.professional-agenda__meta {
+  margin: 0 0 1.25rem;
+  opacity: 0.8;
+}
+
+.professional-agenda__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin: 0 0 1.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.375rem;
+}
+
+.professional-agenda__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.professional-agenda__field label {
+  font-weight: 600;
+}
+
+.professional-agenda__field input {
+  font: inherit;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+}
+
+.professional-agenda__form-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--notice-error-text, #b3261e);
+}
+
+.professional-agenda__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.professional-agenda__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.375rem;
+}
+
+.professional-agenda__range {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.professional-agenda__status {
+  opacity: 0.8;
+}
+
+.professional-agenda__item button {
+  margin-left: auto;
+}
+
+.professional-agenda__result:not(:empty) {
+  margin-top: 1.5rem;
+}
+
 /* ---- Rodapé (StatusIndicator do M0) ------------------------------------------------------------ */
 
 footer {

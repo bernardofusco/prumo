@@ -6,6 +6,7 @@ import { fetchSearchOptions, type SearchOptionsResponse, type SearchParams } fro
 import { ExampleQueries } from './components/ExampleQueries'
 import type { LocationSelection } from './components/LocationPicker'
 import { Notice } from './components/Notice'
+import { ProfessionalAgenda } from './components/ProfessionalAgenda'
 import { ProfessionalSlots } from './components/ProfessionalSlots'
 import { ResultList } from './components/ResultList'
 import { SearchForm } from './components/SearchForm'
@@ -245,13 +246,7 @@ function App() {
 
       {view.kind === 'professional' && <ProfessionalSlots slug={view.slug} onNavigate={navigate} />}
 
-      {view.kind === 'professionalAgenda' && (
-        // A agenda do profissional (MET-480 T14) ainda não existe nesta branch — T13 só
-        // reconhece a rota (lib/view.ts, T12) para não quebrar um endereço colado manualmente.
-        <Notice tone="info">
-          A configuração de horários desta demonstração ainda não está disponível nesta tela.
-        </Notice>
-      )}
+      {view.kind === 'professionalAgenda' && <ProfessionalAgenda slug={view.slug} onNavigate={navigate} />}
 
       <footer>
         <p>

@@ -201,6 +201,15 @@ export function ProfessionalSlots({ slug, onNavigate }: ProfessionalSlotsProps) 
     onNavigate({ kind: 'search' })
   }
 
+  // Link para a agenda do profissional (MET-480 T14, spec.md D2/J4, tasks.md "Done when": "link
+  // 'configurar horários'... com rótulo explícito"). Mesma navegação SEM `react-router` de
+  // `handleBackToSearch`/`ResultCard` — o `href` continua correto por conta própria (nova aba,
+  // "copiar link"); só o clique comum vira `onNavigate` em vez de recarregar a página inteira.
+  function handleConfigureSchedule(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault()
+    onNavigate({ kind: 'professionalAgenda', slug })
+  }
+
   const timezone = slotsState.status === 'success' ? slotsState.timezone : null
 
   return (
@@ -219,6 +228,16 @@ export function ProfessionalSlots({ slug, onNavigate }: ProfessionalSlotsProps) 
         <>
           <h2>{slotsState.professional.fullName}</h2>
           <p className="professional-slots__meta">{slotsState.professional.specialty}</p>
+
+          {/*
+            Rótulo EXPLÍCITO (tasks.md T14 "Done when") — não um ícone, não "editar": deixa claro
+            que esta é a tela de gestão da agenda (sem login, spec.md D2), distinta de "Reservar".
+          */}
+          <p className="professional-slots__agenda-link">
+            <a href={toPath({ kind: 'professionalAgenda', slug })} onClick={handleConfigureSchedule}>
+              Configurar horários desta agenda (demonstração sem login)
+            </a>
+          </p>
 
           {slotsState.slots.length === 0 ? (
             <p>Nenhum horário publicado para os próximos dias.</p>
