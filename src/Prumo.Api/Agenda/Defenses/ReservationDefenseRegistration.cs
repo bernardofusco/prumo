@@ -14,16 +14,12 @@ namespace Prumo.Api.Agenda.Defenses;
 /// então uma única chamada (<see cref="AddReservationDefense"/>) em <c>Program.cs</c> basta.
 ///
 /// <para>
-/// <b>Só <c>ExclusionDefense</c> existe até a T5</b> (tasks.md, "Regras invioláveis": "não crie stubs
-/// vazios que finjam ser defesas"). <see cref="SchedulingOptions.PessimisticDefenseName"/> e
-/// <see cref="SchedulingOptions.OptimisticDefenseName"/> já são nomes VÁLIDOS em
-/// <see cref="SchedulingOptions.KnownDefenseNames"/> (design.md §2 já fecha o conjunto com as três),
-/// mas não têm registro <c>AddKeyedScoped</c> correspondente ainda: T6/T7 adicionam UMA linha cada
-/// aqui, sem reescrever o resto desta classe. Configurar <c>Scheduling:Defense=pessimistic</c> ou
-/// <c>=optimistic</c> antes disso passa a validação de boot (é um nome conhecido) mas falha ao
-/// RESOLVER <see cref="IReservationDefense"/> na primeira requisição (nenhum serviço keyed
-/// registrado ainda) — comportamento aceitável para o escopo da T5, que só entrega a defesa oficial;
-/// o default de <see cref="SchedulingOptions.Defense"/> continua <see cref="SchedulingOptions.ExclusionDefenseName"/>.
+/// <b>As três defesas do M2 estão registradas desde a T7</b> (tasks.md): <c>ExclusionDefense</c> (T5,
+/// oficial), <c>PessimisticDefense</c> (T6) e <c>OptimisticDefense</c> (T7) — cada uma na sua própria
+/// chave de <see cref="SchedulingOptions.KnownDefenseNames"/> (design.md §2 já fechava o conjunto com
+/// as três desde a T5). O teste de carga (T15) resolve as três pela mesma chave para a comparação
+/// medida; o caminho HTTP oficial continua resolvendo só a que <see cref="SchedulingOptions.Defense"/>
+/// aponta (default <see cref="SchedulingOptions.ExclusionDefenseName"/>, spec.md D1: a UI não escolhe).
 /// </para>
 /// </summary>
 public static class ReservationDefenseRegistration
@@ -39,10 +35,7 @@ public static class ReservationDefenseRegistration
         // resolve pela MESMA chave para instanciar as três defesas na comparação medida.
         services.AddKeyedScoped<IReservationDefense, ExclusionDefense>(SchedulingOptions.ExclusionDefenseName);
         services.AddKeyedScoped<IReservationDefense, PessimisticDefense>(SchedulingOptions.PessimisticDefenseName);
-
-        // OptimisticDefense (T7) entra aqui como
-        // services.AddKeyedScoped<IReservationDefense, OptimisticDefense>(SchedulingOptions.OptimisticDefenseName);
-        // — sem reescrever mais nada nesta classe (ver XML-doc acima).
+        services.AddKeyedScoped<IReservationDefense, OptimisticDefense>(SchedulingOptions.OptimisticDefenseName);
 
         // O caminho HTTP oficial (spec.md D1) resolve IReservationDefense SEM chave: a fábrica lê
         // Scheduling:Defense JÁ VALIDADO (SchedulingOptionsRegistration.AddSchedulingOptions,
