@@ -10,9 +10,9 @@ Esta é a **segunda régua nomeada do case**, ao lado do golden set do M1 (`eval
 
 | defense | n | successes | conflicts | other | durationMs |
 |---|---:|---:|---:|---:|---:|
-| `exclusion` | 20 | 1 | 19 | 0 | 18052 |
-| `pessimistic` | 20 | 1 | 19 | 0 | 74 |
-| `optimistic` | 20 | 1 | 19 | 0 | 62 |
+| `exclusion` | 20 | 1 | 19 | 0 | 179 |
+| `pessimistic` | 20 | 1 | 19 | 0 | 218 |
+| `optimistic` | 20 | 1 | 19 | 0 | 194 |
 
 `other` é 0 nas três linhas — nenhuma recusa saiu como `503`/`500`/`422`/`200` replay/timeout/resposta ausente. Este é exatamente o buraco que a spec.md "Contexto" nomeia ("um teste de carga que só contasse sucessos ainda passaria") — a linha `exclusion` só fecha `other = 0` porque o tradutor de conflito (T4) e a tradução do deadlock `40P01` (`project/adr/ADR-008-deadlock-da-exclusao-e-conflito-de-negocio.md`) estão no lugar: sem a ADR-008, a mesma corrida mediu `1×201 + 19×503` contra container frio.
 
@@ -27,6 +27,6 @@ Cada variante roda 3 rodadas de N=20 tentativas concorrentes (chamando a defesa 
 | `exclusion (sem EXCLUDE)` | 20 | 3 | 20, 20, 20 | sim |
 | `pessimistic (sem EXCLUDE)` | 20 | 3 | 1, 1, 1 | não |
 | `optimistic (sem EXCLUDE)` | 20 | 3 | 1, 1, 1 | não |
-| `pessimistic sem FOR UPDATE (sem EXCLUDE)` | 20 | 3 | 20, 5, 4 | sim |
+| `pessimistic sem FOR UPDATE (sem EXCLUDE)` | 20 | 3 | 13, 3, 3 | sim |
 
 **A leitura:** `exclusion` colapsa sem a constraint (ela NÃO tem defesa nenhuma em código — "insere e deixa o banco decidir" é a frase literal, e sem banco decidindo não sobra nada); `pessimistic` e `optimistic` sobrevivem sozinhas (o lock de linha e a incrementação condicional de `version` são mecanismos de APLICAÇÃO, independentes da EXCLUDE); a variante "sem `FOR UPDATE`" — uma cópia da defesa pessimista com o lock removido de propósito, só para este teste, nunca a `PessimisticDefense.cs` de produção — mostra o que acontece quando alguém esquece: sem a constraint E sem o lock, nada segura a corrida. É exatamente o ponto do case: **integridade é constraint de banco, não convenção de código** — a defesa oficial (`exclusion`) é a única das três que não sobrevive sozinha, e é isso que a torna a defesa certa para produção (ela não depende de ninguém lembrar de nada).
