@@ -27,6 +27,26 @@ seção **"Medição do Case"**, normativa). Ele existe para uma frase só: *"va
 encontra encanador sem a palavra "encanador" aparecer em lugar nenhum* — e esse README documenta como
 isso é medido, o que a medição prova e, principalmente, o que ela **não** prova.
 
+## A segunda régua do case (M2): `eval/concurrency-ledger.md`
+
+A partir da MET-480 (M2), este diretório passa a hospedar **duas** réguas nomeadas do case, lado a
+lado. Esta primeira (`golden-set.json`, documentada no resto deste arquivo) mede busca/ranking —
+que a especialidade certa aparece no topo para uma consulta em linguagem de cliente. A segunda
+(`eval/concurrency-ledger.md`, `specs/features/met-480-agendamento-concorrencia/spec.md` seção
+"Medição do Case", `tests/Prumo.Api.Tests/Integration/ConcurrencyLoadTests.cs`, T15) mede uma coisa
+completamente diferente: sob N = 20 tentativas de reserva simultâneas no MESMO horário do MESMO
+profissional, com 20 clientes distintos, a defesa de integridade admite **exatamente uma** — as
+outras 19 recebem `409`/`slot_conflict`, nunca `503`/`500`/timeout. É a prova de concorrência do M2,
+não de qualidade de ranking; as duas réguas não se substituem nem se comparam entre si.
+
+Mesma disciplina das duas: **mudar N, o critério "exatamente 1 sucesso" (C1), "N−1 recusas
+409/`slot_conflict`" (C2), "zero qualquer outro status" (C3) ou a exigência de que as três defesas
+passem simultaneamente (C4) é ADR + decisão do dono** (`project/adr/ADR-007-ferramenta-do-teste-de-carga.md`,
+`project/adr/ADR-008-deadlock-da-exclusao-e-conflito-de-negocio.md`) — nunca edição silenciosa de
+`Prumo.Api.Agenda.Scheduling.LoadVerdict` nem do ledger. `eval/concurrency-ledger.md` é
+gerado/atualizado pelo próprio teste (mesmo espírito deste README: o número publicado é o que foi
+realmente medido, não texto escrito para caber num piso).
+
 ## O que a régua mede
 
 Que o **ranking** devolve a **especialidade** certa no topo para uma consulta escrita em linguagem de

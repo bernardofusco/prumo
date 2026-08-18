@@ -45,4 +45,28 @@ public sealed class SeedRunnerOptionsTests
 
         Assert.Equal("fixtures/custom-professionals.json", resolved);
     }
+
+    /// <summary>
+    /// Achado do review da T8 (MET-480): <c>Program.cs</c> nunca define
+    /// <see cref="SeedRunnerOptions.AgendaProfessionalSlugs"/> a partir de <c>IConfiguration</c> — o
+    /// valor que a produção de fato usa é SEMPRE o default declarado em
+    /// <see cref="SeedRunnerOptions"/>. Trocar esse default por uma lista vazia (ou qualquer coisa
+    /// diferente da lista curada real) desliga o passo de agenda inteiro em produção
+    /// silenciosamente — nenhum outro teste desta suíte cobria isso
+    /// (<c>AgendaSeedPlanTests</c> só prova que a CONSTANTE é válida contra o corpus, não que o
+    /// campo que <c>SeedRunner</c> de fato lê aponta para ela). Este teste fica vermelho se alguém
+    /// reintroduzir esse regresso.
+    /// </summary>
+    [Fact]
+    public void Default_AgendaProfessionalSlugs_IsTheProductionCuratedList_NeverEmpty()
+    {
+        var options = new SeedRunnerOptions
+        {
+            SpecialtiesPath = SeedRunnerOptions.DefaultSpecialtiesPath,
+            ProfessionalsPath = SeedRunnerOptions.DefaultProfessionalsPath,
+        };
+
+        Assert.NotEmpty(options.AgendaProfessionalSlugs);
+        Assert.Equal(AgendaSeedPlan.DefaultCuratedProfessionalSlugs, options.AgendaProfessionalSlugs);
+    }
 }

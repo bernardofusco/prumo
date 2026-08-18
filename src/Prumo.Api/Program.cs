@@ -2,6 +2,8 @@ using System.Text.Json.Serialization;
 
 using Microsoft.EntityFrameworkCore;
 
+using Prumo.Api.Agenda;
+using Prumo.Api.Agenda.Defenses;
 using Prumo.Api.Data;
 using Prumo.Api.Embeddings;
 using Prumo.Api.ErrorHandling;
@@ -38,6 +40,13 @@ if (builder.Configuration[EmbeddingProviderRegistration.ProviderConfigurationKey
 // DeveloperExceptionPageMiddleware do ASP.NET Core anexava uma extensão "exception" com stack trace
 // completo. Ver XML-doc de SearchEndpoints.ConfigureProblemDetails para os dois.
 builder.Services.AddProblemDetails(SearchEndpoints.ConfigureProblemDetails);
+
+// Corpo malformado/tipo errado em POST /api/reservations ou POST /api/professionals/{slug}/slots
+// (MET-480 Fase 4, achado do reviewer): registrado ANTES de GlobalExceptionHandler DE PROPÓSITO —
+// múltiplos IExceptionHandler rodam na ORDEM DE REGISTRO, primeira implementação que devolver true
+// "vence" (ver XML-doc de AgendaRequestBodyExceptionHandler). GlobalExceptionHandler permanece
+// intocado: qualquer exceção que não seja esse caso específico continua caindo nele, como antes.
+builder.Services.AddExceptionHandler<AgendaRequestBodyExceptionHandler>();
 
 // Tratamento global de exceção (MET-530): GlobalExceptionHandler classifica falha de infraestrutura
 // de banco (503, mesmo vocabulário de /api/health/db) vs. qualquer outra exceção não tratada (500) —
@@ -89,6 +98,18 @@ builder.Services.AddSearchQueryEmbedding(builder.Configuration);
 // CancellationToken pinado, sem precisar de Postgres real).
 builder.Services.AddScoped<IProfessionalSearchQuery, ProfessionalSearchQuery>();
 
+// Agenda e reserva sob concorrência (MET-480 T5-T7, design.md §2/§6): Scheduling:Defense (conjunto
+// fechado)/minutos/janela/fuso — validados NO BOOT (ValidateOnStart, mesmo padrão das duas chamadas
+// acima) — e as três defesas (ExclusionDefense/PessimisticDefense/OptimisticDefense) registradas por
+// chave, com o caminho HTTP oficial resolvendo pela defesa configurada (spec.md D1: a UI não
+// escolhe). AddReservationDefense já chama AddSchedulingOptions internamente
+// (Agenda/Defenses/ReservationDefenseRegistration.cs) — uma linha basta aqui.
+builder.Services.AddReservationDefense(builder.Configuration);
+
+// Relógio da API (design.md §2, D7 da spec MET-480): TimeProvider.System como singleton — o Seed já
+// registra o dele no próprio composition root (src/Prumo.Seed/Program.cs), processo separado.
+builder.Services.AddSingleton(TimeProvider.System);
+
 var app = builder.Build();
 
 // PRIMEIRA linha depois de builder.Build(), de propósito (MET-530, XML-doc de GlobalExceptionHandler):
@@ -128,6 +149,11 @@ api.MapGet("/health/db", async Task<IResult> (
 // devolve o resultado já explicado. A única linha desta feature em Program.cs — o resto mora em
 // Search/SearchEndpoints.cs.
 api.MapSearch();
+
+// GET /api/professionals/{slug}/slots (MET-480 T9, design.md §8): lista a agenda com o status já
+// calculado no servidor. Mesmo padrão de MapSearch() — uma única linha aqui, o resto mora em
+// Agenda/AgendaEndpoints.cs.
+api.MapAgenda();
 
 app.Run();
 

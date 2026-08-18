@@ -51,7 +51,15 @@ public sealed class SeedDesyncTests(PostgresIntegrationFixture fixture)
         var professionalsPath = WriteProfessionalsFixture(specialtySlug, professionalSlug, OriginalDescription);
 
         var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero));
-        var options = new SeedRunnerOptions { SpecialtiesPath = specialtiesPath, ProfessionalsPath = professionalsPath };
+        // AgendaProfessionalSlugs vazio (MET-480 T8): esta fixture isolada nunca contém os slugs
+        // curados de produção (AgendaSeedPlan.DefaultCuratedProfessionalSlugs) — o escopo deste
+        // teste é dessincronia de embedding, não agenda.
+        var options = new SeedRunnerOptions
+        {
+            SpecialtiesPath = specialtiesPath,
+            ProfessionalsPath = professionalsPath,
+            AgendaProfessionalSlugs = [],
+        };
 
         try
         {

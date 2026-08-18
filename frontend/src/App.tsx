@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import './App.css'
 import { fetchHealth } from './api/health'
@@ -6,10 +6,13 @@ import { fetchSearchOptions, type SearchOptionsResponse, type SearchParams } fro
 import { ExampleQueries } from './components/ExampleQueries'
 import type { LocationSelection } from './components/LocationPicker'
 import { Notice } from './components/Notice'
+import { ProfessionalAgenda } from './components/ProfessionalAgenda'
+import { ProfessionalSlots } from './components/ProfessionalSlots'
 import { ResultList } from './components/ResultList'
 import { SearchForm } from './components/SearchForm'
 import { StatusIndicator, type StatusIndicatorState } from './components/StatusIndicator'
 import { useSearch } from './hooks/useSearch'
+import { parseView, toPath, type View } from './lib/view'
 
 type OptionsState =
   | { readonly status: 'loading' }
@@ -34,7 +37,43 @@ function buildSearchParams(query: string, location: LocationSelection): SearchPa
   return { q: query }
 }
 
+/**
+ * Roteamento sem biblioteca (MET-480 T13, spec.md D6: `react-router` está proibido; design.md
+ * §10). Lê a view atual de `location.pathname` (`lib/view.ts` `parseView`, T12) e expõe
+ * `navigate` para trocar de tela via `history.pushState` — sem recarregar a página. `popstate`
+ * (botões voltar/avançar do browser) resincroniza o estado com a URL. Nenhuma outra parte do app
+ * lê ou escreve `window.location`/`window.history` diretamente.
+ */
+function useView(): { readonly view: View; readonly navigate: (next: View) => void } {
+  const [view, setView] = useState<View>(() => parseView(window.location.pathname))
+
+  useEffect(() => {
+    function handlePopState() {
+      setView(parseView(window.location.pathname))
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
+  const navigate = useCallback((next: View) => {
+    const path = toPath(next)
+
+    if (path !== window.location.pathname) {
+      window.history.pushState(null, '', path)
+    }
+
+    setView(next)
+  }, [])
+
+  return { view, navigate }
+}
+
 function App() {
+  const { view, navigate } = useView()
   const [healthState, setHealthState] = useState<StatusIndicatorState>('checking')
   const [optionsState, setOptionsState] = useState<OptionsState>({ status: 'loading' })
   const [query, setQuery] = useState('')
@@ -115,6 +154,13 @@ function App() {
     setClientFieldError(null)
   }
 
+  // "Ver horários" do ResultCard (MET-480 T13, spec.md AGN-13/J1) — a ÚNICA forma desta tela de
+  // ir da busca para a agenda de um profissional. `navigate` (useView acima) troca a URL sem
+  // recarregar a página.
+  function handleViewSlots(slug: string) {
+    navigate({ kind: 'professional', slug })
+  }
+
   const cities = optionsState.status === 'success' ? optionsState.data.cities : EMPTY_CITIES
   const exampleQueries =
     optionsState.status === 'success' ? optionsState.data.exampleQueries : EMPTY_EXAMPLE_QUERIES
@@ -125,71 +171,82 @@ function App() {
   return (
     <main>
       <h1>Prumo</h1>
-      <p className="lede">
-        Descreva o serviço que você precisa — a busca entende o pedido, não só palavras-chave.
-      </p>
 
-      <SearchForm
-        query={query}
-        onQueryChange={setQuery}
-        fieldError={fieldError}
-        location={location}
-        onLocationChange={setLocation}
-        cities={cities}
-        exampleQueries={exampleQueries}
-        onExampleQueryClick={handleExampleQueryClick}
-        onSubmit={handleSubmit}
-        isSubmitting={searchState.status === 'loading'}
-        maxQueryLength={maxQueryLength}
-      />
+      {view.kind === 'search' && (
+        <>
+          <p className="lede">
+            Descreva o serviço que você precisa — a busca entende o pedido, não só palavras-chave.
+          </p>
 
-      {optionsState.status === 'error' && (
-        <Notice tone="warning">
-          Não foi possível carregar as cidades e as consultas de demonstração agora. A busca por
-          texto continua funcionando normalmente.
-        </Notice>
-      )}
+          <SearchForm
+            query={query}
+            onQueryChange={setQuery}
+            fieldError={fieldError}
+            location={location}
+            onLocationChange={setLocation}
+            cities={cities}
+            exampleQueries={exampleQueries}
+            onExampleQueryClick={handleExampleQueryClick}
+            onSubmit={handleSubmit}
+            isSubmitting={searchState.status === 'loading'}
+            maxQueryLength={maxQueryLength}
+          />
 
-      {/*
-        Região viva PERSISTENTE (BSC-12; achado do Reviewer): montada desde o carregamento
-        inicial da tela — mesmo vazia, no estado `idle` — para que o leitor de tela já a conheça
-        antes de qualquer conteúdo mudar dentro dela. Uma região que só é inserida no DOM já com
-        texto dentro ("nasce junto com o conteúdo") costuma não ser anunciada. `:not(:empty)` no
-        CSS (App.css) evita que ela ocupe espaço visual enquanto está vazia.
-        `announce={false}` nos `Notice` aninhados: eles já estão dentro desta região viva; um
-        `role` próprio aninhado dentro de `aria-live="polite"` tende a duplicar o anúncio.
-      */}
-      <section aria-live="polite" aria-label="Resultados da busca" className="result-list">
-        {searchState.status === 'loading' && <p role="status">Buscando…</p>}
-
-        {searchState.status === 'error' && searchState.error.code === 'embedding_unavailable' && (
-          <Notice tone="info" announce={false}>
-            <p>
-              Esta consulta não tem um vetor pré-computado disponível nesta demonstração — que
-              roda de propósito sem chave de provedor de embeddings (spec.md D8). Experimente uma
-              das consultas abaixo: são exatamente as que o teste automatizado usa para medir a
-              busca.
-            </p>
-            {searchState.error.exampleQueries && searchState.error.exampleQueries.length > 0 ? (
-              <ExampleQueries
-                queries={searchState.error.exampleQueries}
-                onSelect={handleExampleQueryClick}
-              />
-            ) : (
-              <p>Nenhuma consulta de demonstração está disponível nesta instância ainda.</p>
-            )}
-          </Notice>
-        )}
-
-        {searchState.status === 'error' &&
-          (searchState.error.code === 'embedding_provider_error' || searchState.error.code === 'network') && (
-            <Notice tone="error" announce={false}>
-              {searchState.error.detail}
+          {optionsState.status === 'error' && (
+            <Notice tone="warning">
+              Não foi possível carregar as cidades e as consultas de demonstração agora. A busca
+              por texto continua funcionando normalmente.
             </Notice>
           )}
 
-        {searchState.status === 'success' && <ResultList response={searchState.data} />}
-      </section>
+          {/*
+            Região viva PERSISTENTE (BSC-12; achado do Reviewer): montada desde o carregamento
+            inicial da tela — mesmo vazia, no estado `idle` — para que o leitor de tela já a
+            conheça antes de qualquer conteúdo mudar dentro dela. Uma região que só é inserida no
+            DOM já com texto dentro ("nasce junto com o conteúdo") costuma não ser anunciada.
+            `:not(:empty)` no CSS (App.css) evita que ela ocupe espaço visual enquanto está vazia.
+            `announce={false}` nos `Notice` aninhados: eles já estão dentro desta região viva; um
+            `role` próprio aninhado dentro de `aria-live="polite"` tende a duplicar o anúncio.
+          */}
+          <section aria-live="polite" aria-label="Resultados da busca" className="result-list">
+            {searchState.status === 'loading' && <p role="status">Buscando…</p>}
+
+            {searchState.status === 'error' && searchState.error.code === 'embedding_unavailable' && (
+              <Notice tone="info" announce={false}>
+                <p>
+                  Esta consulta não tem um vetor pré-computado disponível nesta demonstração — que
+                  roda de propósito sem chave de provedor de embeddings (spec.md D8). Experimente
+                  uma das consultas abaixo: são exatamente as que o teste automatizado usa para
+                  medir a busca.
+                </p>
+                {searchState.error.exampleQueries && searchState.error.exampleQueries.length > 0 ? (
+                  <ExampleQueries
+                    queries={searchState.error.exampleQueries}
+                    onSelect={handleExampleQueryClick}
+                  />
+                ) : (
+                  <p>Nenhuma consulta de demonstração está disponível nesta instância ainda.</p>
+                )}
+              </Notice>
+            )}
+
+            {searchState.status === 'error' &&
+              (searchState.error.code === 'embedding_provider_error' || searchState.error.code === 'network') && (
+                <Notice tone="error" announce={false}>
+                  {searchState.error.detail}
+                </Notice>
+              )}
+
+            {searchState.status === 'success' && (
+              <ResultList response={searchState.data} onViewSlots={handleViewSlots} />
+            )}
+          </section>
+        </>
+      )}
+
+      {view.kind === 'professional' && <ProfessionalSlots slug={view.slug} onNavigate={navigate} />}
+
+      {view.kind === 'professionalAgenda' && <ProfessionalAgenda slug={view.slug} onNavigate={navigate} />}
 
       <footer>
         <p>

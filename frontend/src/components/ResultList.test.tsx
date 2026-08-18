@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { SearchResponse } from '../api/search'
 import { ResultList } from './ResultList'
+
+const NOOP_ON_VIEW_SLOTS = vi.fn()
 
 const RANKING = { semanticWeight: 0.7, proximityWeight: 0.3, distanceDecayKm: 10, minSemanticScore: 0 }
 
@@ -35,7 +37,7 @@ function baseResponse(overrides: Partial<SearchResponse> = {}): SearchResponse {
 // no DOM já com texto dentro não é confiavelmente anunciada por leitor de tela.
 describe('ResultList', () => {
   it('renderiza a lista como <ol role="list">, um item por resultado', () => {
-    render(<ResultList response={baseResponse()} />)
+    render(<ResultList response={baseResponse()} onViewSlots={NOOP_ON_VIEW_SLOTS} />)
 
     const list = screen.getByRole('list')
     expect(list.tagName).toBe('OL')
@@ -61,6 +63,7 @@ describe('ResultList', () => {
             },
           ],
         })}
+        onViewSlots={NOOP_ON_VIEW_SLOTS}
       />,
     )
 
@@ -69,34 +72,39 @@ describe('ResultList', () => {
   })
 
   it('mode: degraded — mostra o aviso de modo degradado', () => {
-    render(<ResultList response={baseResponse({ embedding: { mode: 'degraded', model: 'hashing:v1@1024' } })} />)
+    render(
+      <ResultList
+        response={baseResponse({ embedding: { mode: 'degraded', model: 'hashing:v1@1024' } })}
+        onViewSlots={NOOP_ON_VIEW_SLOTS}
+      />,
+    )
 
     expect(screen.getByText(/Modo degradado/)).toBeDefined()
   })
 
   it('não mostra nenhum aviso quando há localização e o modo não é degradado', () => {
-    render(<ResultList response={baseResponse()} />)
+    render(<ResultList response={baseResponse()} onViewSlots={NOOP_ON_VIEW_SLOTS} />)
 
     expect(screen.queryByText(/Sem localização informada/)).toBeNull()
     expect(screen.queryByText(/Modo degradado/)).toBeNull()
   })
 
   it('lista vazia por RAIO (totalCandidates: 0) — mensagem distinta de "ninguém relevante"', () => {
-    render(<ResultList response={baseResponse({ totalCandidates: 0, results: [] })} />)
+    render(<ResultList response={baseResponse({ totalCandidates: 0, results: [] })} onViewSlots={NOOP_ON_VIEW_SLOTS} />)
 
     expect(screen.getByText(/Nenhum profissional atende a sua região/)).toBeDefined()
     expect(screen.queryByRole('list')).toBeNull()
   })
 
   it('lista vazia por CORTE (totalCandidates > 0, results: []) — mensagem distinta de "ninguém no raio"', () => {
-    render(<ResultList response={baseResponse({ totalCandidates: 4, results: [] })} />)
+    render(<ResultList response={baseResponse({ totalCandidates: 4, results: [] })} onViewSlots={NOOP_ON_VIEW_SLOTS} />)
 
     expect(screen.getByText(/Nenhum profissional relevante o bastante/)).toBeDefined()
     expect(screen.queryByText(/Nenhum profissional atende a sua região/)).toBeNull()
   })
 
   it('resumo mostra quantos resultados de quantos candidatos', () => {
-    render(<ResultList response={baseResponse({ totalCandidates: 37 })} />)
+    render(<ResultList response={baseResponse({ totalCandidates: 37 })} onViewSlots={NOOP_ON_VIEW_SLOTS} />)
 
     expect(screen.getByText('1 de 37 profissional(is) encontrados.')).toBeDefined()
   })
