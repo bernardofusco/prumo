@@ -4,6 +4,8 @@ import { ResultCard } from './ResultCard'
 
 export interface ResultListProps {
   readonly response: SearchResponse
+  /** Repassado a cada `ResultCard` (MET-480 T13) — ver a doc de `ResultCardProps.onViewSlots`. */
+  readonly onViewSlots: (slug: string) => void
 }
 
 /**
@@ -23,7 +25,7 @@ export interface ResultListProps {
  * descartar a semântica de lista nativa do `<ol>` — o Chromium não tem esse problema, mas a
  * mitigação é barata e não depende de qual motor o visitante usa.
  */
-export function ResultList({ response }: ResultListProps) {
+export function ResultList({ response, onViewSlots }: ResultListProps) {
   const { results, totalCandidates, geo, embedding, ranking } = response
 
   return (
@@ -56,7 +58,7 @@ export function ResultList({ response }: ResultListProps) {
           <ol className="result-list__items" role="list">
             {results.map((result) => (
               <li key={result.slug}>
-                <ResultCard result={result} ranking={ranking} />
+                <ResultCard result={result} ranking={ranking} onViewSlots={onViewSlots} />
               </li>
             ))}
           </ol>

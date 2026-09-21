@@ -28,16 +28,17 @@ prumo/
 ├── Directory.Build.props   # net10.0, Nullable, TreatWarningsAsErrors, EnforceCodeStyleInBuild
 ├── .editorconfig           # fonte da verdade do `dotnet format`
 ├── .gitattributes          # normaliza EOL (LF) independente do SO de quem clona
-├── src/Prumo.Api/          # Minimal API (.NET 10): health, GET /api/search(/options) (M1)
-├── src/Prumo.Seed/         # Console de ingestão (M1): popula specialties/professionals + embeddings
+├── src/Prumo.Api/          # Minimal API (.NET 10): health, busca (M1) e agenda/reservas (M2)
+│   └── Agenda/             # SlotAvailability/ReservationDecision/LoadVerdict (puros) + Defenses/ (M2)
+├── src/Prumo.Seed/         # Console de ingestão (M1): specialties/professionals + embeddings + slots de agenda (M2)
 ├── src/Prumo.Eval/         # Console que gera eval/embeddings/<modelo>.json (vetores das consultas do golden set)
 ├── src/Prumo.SeedEmbeddings/ # Console que gera db/seed/embeddings/<modelo>.json (vetores do corpus, sem banco)
 ├── tests/Prumo.Api.Tests/  # xUnit; Category=Integration usa Testcontainers; Eval/ mede o golden set
-├── frontend/               # React + TypeScript (Vite) + Vitest — status da API + tela de busca híbrida
-├── db/migrations/          # SQL forward-only — as constraints são parte da história
+├── frontend/               # React + TypeScript (Vite) + Vitest — busca híbrida (M1) + agenda/reserva (M2)
+├── db/migrations/          # SQL forward-only — as constraints são parte da história (0005 = agenda/reservas, M2)
 ├── db/seed/                # Corpus de demonstração 100% fictício (specialties.json, professionals.json)
 ├── db/seed/embeddings/     # Vetores REAIS pré-computados do corpus (versionado, ver "Sem provedor…")
-├── eval/                   # A régua do M1: golden-set.json, embeddings/ das consultas, README.md
+├── eval/                   # As DUAS réguas do case: golden-set.json (M1) e concurrency-ledger.md (M2)
 ├── compose.yaml            # Postgres + pgvector (+ cube/earthdistance) para dev local
 ├── .env.example            # nomes de variáveis (nunca valores reais)
 └── .github/workflows/ci.yml  # CI (espelha os gates do harness)
@@ -84,6 +85,23 @@ prumo/
 > projeto é desenvolvido com o harness de agentes [`main-brain`](https://github.com/bernardofusco)
 > (adapter `project-prumo`): specs aprovadas por humano, implementação por agentes com gates de
 > build/teste, revisão independente e QA em browser real.
+
+> **Atualização — M2 concluído (MET-480, agendamento sob concorrência).** A partir da busca, o
+> cliente vê a agenda de um profissional e reserva um horário; o profissional publica/remove slots
+> numa tela sem login (demonstração). Três defesas do mesmo invariante — constraint de exclusão
+> (`EXCLUDE USING gist`, a oficial do produto), lock pessimista (`SELECT … FOR UPDATE`) e lock
+> otimista (coluna `version`) — vivem lado a lado no repo, selecionáveis por `Scheduling:Defense`.
+> A régua nomeada do milestone (`tests/Prumo.Api.Tests/Integration/ConcurrencyLoadTests.cs`, N = 20
+> tentativas simultâneas no mesmo horário) mede, para as três, **exatamente 1 sucesso e 19 recusas
+> `409`/`slot_conflict`, zero `503`/`500`/timeout** — resultado versionado em
+> [`eval/concurrency-ledger.md`](eval/concurrency-ledger.md). Ver a seção "Agendamento" abaixo para
+> como rodar a demo, reproduzir a corrida (J2) e onde cada defesa mora no código.
+> [`project/adr/ADR-007-ferramenta-do-teste-de-carga.md`](https://github.com/bernardofusco/project-prumo/blob/develop/project/adr/ADR-007-ferramenta-do-teste-de-carga.md)
+> (repo do harness) fechou a ferramenta da régua (harness próprio em xUnit, zero dependência nova) e
+> [`ADR-008`](https://github.com/bernardofusco/project-prumo/blob/develop/project/adr/ADR-008-deadlock-da-exclusao-e-conflito-de-negocio.md)
+> registra um achado só a medição revelou: sob N = 20 no mesmo intervalo, o Postgres recusa as
+> perdedoras por **deadlock (`40P01`)**, não por violação de exclusão (`23P01`) — as duas são
+> traduzidas para `409` pelo mesmo tradutor de conflito.
 
 ## Como rodar
 
@@ -153,14 +171,26 @@ dotnet run --project src/Prumo.Seed
 
 (se você mudou `POSTGRES_PORT`/usuário/senha no seu `.env`, ajuste `Port=`/`Username=`/`Password=` na
 primeira linha para bater — mesmo aviso de `Port=5432` já feito na connection string do
-`.env.example`.) Saída real de uma execução limpa (banco vazio):
+`.env.example`.) **Desde a MET-480 (M2), o mesmo comando também publica a agenda de demonstração**
+— nenhum passo/console separado: um quarto bloco no resumo, `Agenda: N slot(s) publicado(s), M
+preservado(s) (reservado ou fora do gerenciado)`. Saída real de uma execução limpa (banco vazio):
 
 ```
 Ingestão concluída.
   Especialidades: 15 criada(s), 0 atualizada(s).
   Profissionais:  150 criado(s), 0 atualizado(s).
   Embeddings:     150 gerado(s), 0 pulado(s) (já sincronizado(s)).
+  Agenda:         60 slot(s) publicado(s), 0 preservado(s) (reservado ou fora do gerenciado).
 ```
+
+Os 60 vêm de uma conta determinística, não medida à mão: 4 profissionais curados
+(`AgendaSeedPlan.DefaultCuratedProfessionalSlugs`, incluindo `ana-oliveira-bh-001`, a encanadora da
+jornada "vazamento no banheiro") × 5 dias úteis à frente × 3 janelas de 1h por dia
+(`AgendaSeedPlan.BuildWindows`) — provado por `tests/Prumo.Api.Tests/Seed/AgendaSeedPlanTests.cs`
+(sem banco) e por `tests/Prumo.Api.Tests/Integration/AgendaSeedTests.cs` (com Postgres real,
+Testcontainers). "Preservado" só sobe se algum desses horários já tiver sido reservado por um
+cliente entre duas execuções do seed — o passo nunca apaga um slot `source='seed'` com reserva, nem
+qualquer slot `source='manual'` publicado pela tela de agenda (design.md §9 da MET-480).
 
 Cada profissional fica com `embedding_model = openai-compatible:text-embedding-qwen3-embedding-0.6b@1024` —
 vetores **reais** (`qwen3-embedding-0.6b`, via LM Studio local — modelo trocado na MET-524; gerados
@@ -174,7 +204,12 @@ Ingestão concluída.
   Especialidades: 0 criada(s), 15 atualizada(s).
   Profissionais:  0 criado(s), 150 atualizado(s).
   Embeddings:     0 gerado(s), 150 pulado(s) (já sincronizado(s)).
+  Agenda:         60 slot(s) publicado(s), 0 preservado(s) (reservado ou fora do gerenciado).
 ```
+
+(a agenda mostra `60 publicado(s)` de novo, não `0` — o passo apaga cada slot `seed` livre daquela
+janela exata e o recria, deliberadamente, para que a grade continue rolante a partir de "amanhã" a
+cada execução; só reservar um desses horários entre as duas execuções faria `Preservado` subir.)
 
 Ao final, sai com código `0`; entrada inválida (arquivo de corpus ausente/malformado) sai com `2`,
 falha do provedor de embeddings — inclusive `Embeddings:BaseUrl`/`Embeddings:Model` ausentes no
@@ -359,6 +394,101 @@ premiando quem repete a palavra da consulta.
 vocabulário de "serviço doméstico" próximo entre si) tem um teto medido de ≈ 0,61 mesmo no melhor caso
 possível (leave-one-out sobre as 150 descrições reais do corpus); ver `eval/README.md`, "Piso `L2`
 baixado de 0,70 para 0,40", para a medição completa e o racional.
+
+### Agendamento (MET-480 — reserva sob concorrência)
+
+Com o banco populado (seção "Seed" — o mesmo comando já publica profissionais **e** uma grade
+rolante de slots de agenda, ver abaixo) e a API + frontend no ar (seção "API e frontend"), a agenda
+já funciona de ponta a ponta:
+
+1. Busque algo como "vazamento no banheiro" (`http://localhost:5173`) — a busca da MET-479
+   continua exatamente como era.
+2. No card de um resultado, acione **"Ver horários"** (teclado incluso — `Tab`/`Enter`, tem nome
+   acessível). A tela vai para `/profissional/{slug}` e lista os horários do profissional com o
+   `status` que a API já calculou (`available`/`booked`/`past` — o React nunca decide isso sozinho).
+3. Clique em **"Reservar"** num horário `available`. A confirmação aparece numa região `aria-live`
+   persistente; o mesmo horário passa a `booked` na próxima leitura.
+4. Em **"Configurar horários desta agenda (demonstração sem login)"**, o profissional publica
+   (`start`/`end`) e remove slots — **sem autenticação nenhuma**: quem tiver a URL
+   `/profissional/{slug}/agenda` age como se fosse aquele profissional (decisão deliberada de
+   escopo de demo, spec.md D2 da MET-480; a tela mostra um aviso permanente disso, não um toast que
+   some).
+
+O seed curado inclui `ana-oliveira-bh-001` (encanadora) com slots publicados — é o profissional que
+a jornada acima encontra digitando "vazamento no banheiro".
+
+#### Reproduzindo a corrida entre dois clientes (jornada J2)
+
+A identidade do cliente é um UUID anônimo (`prumo.clientKey`) gerado no `localStorage` na primeira
+visita (spec.md D2 — sem login, sem cookie de sessão, sem dado pessoal). Para repetir a "corrida"
+que é a história central do M2 — dois clientes tentando fechar o mesmo horário — você precisa de
+**duas `clientKey` distintas**, ou seja, dois "clientes" diferentes no mesmo navegador:
+
+1. Reserve um horário normalmente (passos 1–3 acima) numa aba comum.
+2. Abra uma **janela anônima/privada** do navegador (ou, na mesma aba,
+   `localStorage.removeItem('prumo.clientKey')` pelo DevTools e recarregue a página — as duas formas
+   geram uma `clientKey` nova) e vá para o **mesmo** `/profissional/{slug}`.
+3. Tente reservar o **mesmo** horário que já foi reservado no passo 1. **Esperado:** `409` —
+   mensagem clara de conflito ("esse horário acabou de ser reservado por outro cliente"), nunca o
+   texto de "tente novamente" de um `503`. Atualizando a lista, o slot aparece `booked`.
+
+Para ver a régua de verdade — **N = 20** tentativas simultâneas, não só duas — não é preciso abrir
+20 janelas: é exatamente o que
+[`tests/Prumo.Api.Tests/Integration/ConcurrencyLoadTests.cs`](tests/Prumo.Api.Tests/Integration/ConcurrencyLoadTests.cs)
+automatiza contra as três defesas (seção "A régua da concorrência", abaixo).
+
+#### As três defesas, e como alternar (`Scheduling:Defense`)
+
+A mesma interface (`IReservationDefense`, `src/Prumo.Api/Agenda/Defenses/IReservationDefense.cs`)
+tem três implementações, lado a lado no repo — a tese do case é que elas resolvem o **mesmo**
+invariante (no máximo uma reserva por intervalo do profissional) por mecanismos diferentes:
+
+| Defesa | Arquivo | Mecanismo |
+|---|---|---|
+| `exclusion` (**oficial do produto**, default) | `Agenda/Defenses/ExclusionDefense.cs` | `INSERT` e deixa o banco decidir — `EXCLUDE USING gist (professional_id WITH =, period WITH &&)` na migration `0005`. Nenhuma checagem de overlap em código. |
+| `pessimistic` | `Agenda/Defenses/PessimisticDefense.cs` | `SELECT … FOR UPDATE` na linha do slot antes de decidir — serializa os concorrentes na aplicação. |
+| `optimistic` | `Agenda/Defenses/OptimisticDefense.cs` | `UPDATE availability_slots SET version = version + 1 WHERE id = @id AND version = @v` — CAS pela coluna `version`; 0 linhas afetadas ⇒ conflito. |
+
+O caminho HTTP de produção/demo (`POST /api/reservations`) **sempre** usa a defesa configurada em
+`Scheduling:Defense` (`src/Prumo.Api/appsettings.json`, default `"exclusion"`) — a UI nunca escolhe
+qual defesa está ativa. Para rodar a API localmente com outra defesa (só para inspeção/comparação
+manual — a demo pública continua em `exclusion`):
+
+```sh
+export Scheduling__Defense=pessimistic   # ou optimistic
+dotnet run --project src/Prumo.Api
+```
+
+Um valor fora de `exclusion`/`pessimistic`/`optimistic` derruba o boot da API
+(`ValidateOnStart`) — não falha em silêncio na primeira reserva.
+
+#### A régua da concorrência (a segunda régua do case)
+
+`dotnet test --filter "Category=Integration"` inclui o teste de carga do M2
+(`ConcurrencyLoadTests`): **N = 20** `POST /api/reservations` simultâneos, via
+`WebApplicationFactory` + Postgres real, no **mesmo** horário do **mesmo** profissional, com 20
+`clientKey` distintas — repetido uma vez por defesa, cada rodada com um slot próprio. A régua
+(`Prumo.Api.Agenda.Scheduling.LoadVerdict`) só passa com **exatamente 1** sucesso de criação e
+**19** recusas `409`/`slot_conflict` — zero de qualquer outro status (`200` replay, `422`, `500`,
+`503`, timeout). O resultado medido — não escrito à mão — é publicado em
+[`eval/concurrency-ledger.md`](eval/concurrency-ledger.md), ao lado do golden set do M1
+(`eval/README.md`). Mudar N ou o critério "exatamente 1 sucesso" é ADR + decisão do dono
+(`project/adr/ADR-007-ferramenta-do-teste-de-carga.md`,
+`project/adr/ADR-008-deadlock-da-exclusao-e-conflito-de-negocio.md`, repo do harness).
+
+#### Limitação conhecida: rotas profundas fora do dev server
+
+`/profissional/:slug` e `/profissional/:slug/agenda` são resolvidas pelo **fallback SPA do
+servidor de desenvolvimento do Vite** (`npm --prefix frontend run dev`): qualquer caminho que não
+seja um arquivo estático cai em `index.html`, e o roteamento sem biblioteca (`lib/view.ts`, History
+API — `react-router` está fora de escopo, spec.md D6 da MET-480) assume dali. **Isso não existe**
+em `vite preview` nem servindo `frontend/dist/` como arquivos estáticos puros (ex.: atrás de um
+Nginx sem regra de fallback, ou abrindo `dist/index.html` via `file://`): recarregar a página numa
+URL profunda, ou colar o link direto, devolve 404 do servidor de arquivos — a navegação **dentro**
+do app (clicar em "Ver horários") continua funcionando normalmente, só o acesso direto/recarga é
+que quebra fora do dev server. A demo deste repo é o dev server; nenhum plugin de fallback foi
+adicionado para cobrir um build estático/produção (design.md §10 da MET-480, fora de escopo v1 —
+não há deploy neste milestone).
 
 ### Testes e gates
 

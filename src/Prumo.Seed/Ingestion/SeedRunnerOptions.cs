@@ -24,6 +24,16 @@ public sealed record SeedRunnerOptions
     public int EmbeddingBatchSize { get; init; } = DefaultEmbeddingBatchSize;
 
     /// <summary>
+    /// Slugs de profissionais curados para o passo de agenda sintética (MET-480 T8, design.md §9).
+    /// Default = <see cref="AgendaSeedPlan.DefaultCuratedProfessionalSlugs"/> (o corpus real de
+    /// produção); configurável só para que testes de integração usem sua PRÓPRIA fixture isolada
+    /// (mesmo padrão de <see cref="SpecialtiesPath"/>/<see cref="ProfessionalsPath"/>) em vez de
+    /// depender do corpus de 150+ profissionais real — nunca para inventar slug fora do corpus
+    /// efetivamente carregado (<see cref="SeedRunner"/> valida isso em runtime de qualquer forma).
+    /// </summary>
+    public IReadOnlyList<string> AgendaProfessionalSlugs { get; init; } = AgendaSeedPlan.DefaultCuratedProfessionalSlugs;
+
+    /// <summary>
     /// Resolve um valor configurado (<c>Seed:SpecialtiesPath</c>/<c>Seed:ProfessionalsPath</c>, lido
     /// por <c>Program.cs</c>) contra o default correspondente. Achado de review da T10: uma
     /// variável de ambiente EXPORTADA e VAZIA (ex.: <c>Seed__SpecialtiesPath=</c>, exatamente como

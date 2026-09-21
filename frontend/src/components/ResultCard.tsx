@@ -1,9 +1,18 @@
 import type { SearchRankingInfo, SearchResultItem } from '../api/search'
 import { formatDistanceKm, formatScore } from '../lib/format'
+import { toPath } from '../lib/view'
 
 export interface ResultCardProps {
   readonly result: SearchResultItem
   readonly ranking: SearchRankingInfo
+  /**
+   * Aciona a navegação para a agenda do profissional (MET-480 T13, spec.md AGN-13/J1). Quem
+   * decide COMO navegar (history.pushState via `useView`, App.tsx) é o chamador — este componente
+   * só avisa QUAL slug foi escolhido. O `href` do link (abaixo, via `toPath`) continua correto por
+   * conta própria — nova aba, "copiar link" — só o clique comum vira `onViewSlots` em vez de
+   * recarregar a página inteira (spec.md D6: sem `react-router`).
+   */
+  readonly onViewSlots: (slug: string) => void
 }
 
 /**
@@ -20,8 +29,8 @@ export interface ResultCardProps {
  *   `ranking.semanticWeight` continua reportando 0.7 (o peso configurado, não o aplicado nesta
  *   busca) — rotular como "0,71 × 0,70 = 0,71" seria uma conta que não fecha, exibida na tela.
  */
-export function ResultCard({ result, ranking }: ResultCardProps) {
-  const { fullName, specialty, city, state, serviceDescription, distanceKm, score, factors } = result
+export function ResultCard({ result, ranking, onViewSlots }: ResultCardProps) {
+  const { slug, fullName, specialty, city, state, serviceDescription, distanceKm, score, factors } = result
 
   return (
     <article className="result-card">
@@ -68,6 +77,20 @@ export function ResultCard({ result, ranking }: ResultCardProps) {
           </div>
         )}
       </dl>
+
+      <p className="result-card__actions">
+        <a
+          className="result-card__view-slots"
+          href={toPath({ kind: 'professional', slug })}
+          aria-label={`Ver horários de ${fullName}`}
+          onClick={(event) => {
+            event.preventDefault()
+            onViewSlots(slug)
+          }}
+        >
+          Ver horários
+        </a>
+      </p>
     </article>
   )
 }

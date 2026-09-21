@@ -93,6 +93,25 @@ public sealed class MigrationIdempotencyTests(PostgresIntegrationFixture fixture
         Assert.Equal("vector(1024)", embeddingColumnType);
     }
 
+    /// <summary>
+    /// AGN-01 (specs/features/met-480-agendamento-concorrencia/spec.md): reaplicar
+    /// <c>0005_agenda_and_reservations.sql</c> num banco que já a tem não falha —
+    /// <c>CREATE EXTENSION IF NOT EXISTS</c>, <c>CREATE TABLE IF NOT EXISTS</c> (com as EXCLUDE,
+    /// UNIQUE e CHECKs declaradas inline) e <c>CREATE INDEX IF NOT EXISTS</c> são idempotentes por
+    /// construção, mesmo padrão de <see cref="ReapplyingSpecialtiesAndProfessionalsMigration_DoesNotThrow"/>
+    /// (0002): ao contrário da 0003, a 0005 não precisa de bloco <c>DO $$ ... END $$</c> porque
+    /// nenhuma constraint é adicionada via <c>ALTER TABLE</c> numa tabela pré-existente — tudo nasce
+    /// dentro do próprio <c>CREATE TABLE IF NOT EXISTS</c>, que a segunda passada simplesmente pula
+    /// inteiro se a tabela já existe.
+    /// </summary>
+    [Fact]
+    public async Task ReapplyingAgendaAndReservationsMigration_DoesNotThrow()
+    {
+        var exception = await ReapplyMigrationAsync("0005_agenda_and_reservations.sql");
+
+        Assert.Null(exception);
+    }
+
     private async Task<string?> ReadEmbeddingColumnTypeAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

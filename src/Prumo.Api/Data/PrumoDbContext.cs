@@ -10,17 +10,22 @@ namespace Prumo.Api.Data;
 /// Ganhou <see cref="DbSet{TEntity}"/> de <see cref="Specialty"/> e <see cref="Professional"/> na
 /// MET-478 (T3, design.md §3.1) — o M0 (MET-477) deixava este contexto deliberadamente vazio porque
 /// não modelava domínio nenhum (specs/features/met-477-fundacao-repos-e-gates/spec.md, seção
-/// "Não-Objetivos"); esse motivo não vale mais. O schema do banco continua sendo SQL forward-only
-/// em <c>db/migrations/</c> — este contexto nunca chama <c>Database.Migrate()</c> nem
-/// <c>Database.EnsureCreated()</c>, o que criaria schema por trás do SQL versionado; o mapeamento
-/// (<c>Data/Configurations/</c>, aplicado abaixo) se adapta ao schema já existente, nunca o
-/// contrário.
+/// "Não-Objetivos"); esse motivo não vale mais. Ganhou <see cref="AvailabilitySlot"/> e
+/// <see cref="Reservation"/> na MET-480 (T2, design.md §4) — agenda e reservas do M2. O schema do
+/// banco continua sendo SQL forward-only em <c>db/migrations/</c> — este contexto nunca chama
+/// <c>Database.Migrate()</c> nem <c>Database.EnsureCreated()</c>, o que criaria schema por trás do
+/// SQL versionado; o mapeamento (<c>Data/Configurations/</c>, aplicado abaixo) se adapta ao schema
+/// já existente, nunca o contrário.
 /// </summary>
 public sealed class PrumoDbContext(DbContextOptions<PrumoDbContext> options) : DbContext(options)
 {
     public DbSet<Specialty> Specialties => Set<Specialty>();
 
     public DbSet<Professional> Professionals => Set<Professional>();
+
+    public DbSet<AvailabilitySlot> AvailabilitySlots => Set<AvailabilitySlot>();
+
+    public DbSet<Reservation> Reservations => Set<Reservation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
