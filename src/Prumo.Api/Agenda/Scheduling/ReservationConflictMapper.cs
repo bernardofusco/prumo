@@ -187,12 +187,25 @@ public static class ReservationConflictMapper
     ///
     /// <para>
     /// <b>Limitação documentada (decisão explícita, não descuido):</b> sem <c>ConstraintName</c>, um
-    /// <c>40P01</c> É ACEITO POR QUALQUER ORIGEM, restrito só pelo CONTEXTO DE CHAMADA — este mapper
-    /// só é invocado por <see cref="Prumo.Api.Agenda.Defenses.ExclusionDefense"/>, no ÚNICO ponto de
-    /// escrita daquele caminho (o <c>INSERT</c> em <c>reservations</c>, sem nenhuma outra escrita na
-    /// mesma transação que pudesse deadlockar por outro motivo). Se este mapper for reusado por outro
-    /// chamador no futuro (outra tabela, outra EXCLUDE), essa suposição precisa ser revisitada — não é
-    /// garantida pelo tipo da exceção, é garantida por ESTE mapper ter um único call site hoje.
+    /// <c>40P01</c> é aceito por qualquer origem. Quem restringe o contexto é o call site de
+    /// <see cref="Map"/>, e hoje são três, todos de produção:
+    /// <see cref="Prumo.Api.Agenda.Defenses.ExclusionDefense"/> (só o <c>INSERT</c> em
+    /// <c>reservations</c>, sem outra escrita na mesma transação),
+    /// <see cref="Prumo.Api.Agenda.Defenses.PessimisticDefense"/> (<c>SELECT … FOR UPDATE</c> e o
+    /// <c>INSERT</c> na mesma transação explícita) e
+    /// <see cref="Prumo.Api.Agenda.Defenses.OptimisticDefense"/>, que antes do <c>INSERT</c> faz um
+    /// <c>UPDATE availability_slots SET version = version + 1</c> — uma segunda escrita. Um deadlock
+    /// nascido nesse <c>UPDATE</c> (contra o <c>DELETE</c> de slot da agenda, ou contra o seed)
+    /// também seria classificado como conflito de reserva: este método não distingue a origem.
+    /// </para>
+    ///
+    /// <para>
+    /// Na prática de hoje, pessimista e otimista capturam só <c>DbUpdateException</c>. O <c>40P01</c>
+    /// chega embrulhado em <see cref="InvalidOperationException"/> (ADR-008), então por esse caminho
+    /// o mapper não é alcançado. Isso descreve o embrulho atual do EF Core, não um invariante: a
+    /// defesa que traduz <c>40P01</c> de verdade é a oficial, <c>exclusion</c>, que captura
+    /// <see cref="Exception"/>. Decisão do dono (MET-535, opção 2): corrigir este texto. O aceite de
+    /// <c>40P01</c> sem <c>ConstraintName</c> permanece.
     /// </para>
     /// </summary>
     private static bool IsExclusionDisputeOnReservations(PostgresException? postgresException)
