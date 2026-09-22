@@ -353,6 +353,16 @@ public sealed class ConcurrencyLoadTests(PostgresIntegrationFixture fixture, ITe
             "arredondada para o segundo mais próximo (abaixo de 500 ms publica 0) — **informativo, não " +
             "é régua** (ADR-007: a tese do M2 é integridade sob corrida, não RPS).");
         Line();
+        Line(
+            "O número é da suíte `Category=Integration` com o pool quente, não de um teste isolado " +
+            "contra container frio. Na revisão da MET-480 o caminho quente (`23P01`) ficou na casa de " +
+            "200 ms; o caminho frio (`40P01`, dezenas de deadlocks) levou cerca de 19 s na defesa " +
+            "`exclusion`. N=20, `deadlock_timeout` padrão do Postgres (1 s) e `CommandTimeout` padrão " +
+            "do Npgsql (30 s) — este repo não sobrescreve nenhum dos dois. A cascata de deadlocks " +
+            "cresce cerca de 1 s por perdedor, então N=20 consome cerca de 19 s de um orçamento de " +
+            "30 s. Um timeout vira `NpgsqlException`, sobe ao handler global e vira `503`, e C3 " +
+            "reprova por infraestrutura. A folga fica registrada; o timeout não muda.");
+        Line();
         Line("## As três defesas, medidas");
         Line();
         Line("| defense | n | successes | conflicts | other | durationMs |");
