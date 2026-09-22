@@ -70,7 +70,9 @@ namespace Prumo.Api.Agenda.Defenses;
 /// <c>SaveChangesAsync</c> dentro da transação. Qualquer falha aqui significa que a EXCLUDE agiu como
 /// rede de segurança (design.md §6.2, passo 4 — só dispararia se o lock tivesse sido aplicado errado
 /// nesta implementação); o tradutor é o MESMO <see cref="ReservationConflictMapper.Map"/> da T4/T5.
-/// Sucesso: <c>CommitAsync</c> — libera o lock para o próximo concorrente enfileirado.
+/// A releitura do vencedor só roda depois de <c>RollbackAsync</c>: a transação já foi abortada, e um
+/// <c>SELECT</c> nela devolve <c>25P02</c>. Sucesso: <c>CommitAsync</c> — libera o lock para o
+/// próximo concorrente enfileirado.
 /// </description></item>
 /// </list>
 /// </summary>
@@ -136,6 +138,8 @@ public sealed class PessimisticDefense(PrumoDbContext dbContext, TimeProvider ti
         }
         catch (DbUpdateException exception)
         {
+            await transaction.RollbackAsync(cancellationToken);
+            dbContext.Entry(reservation).State = EntityState.Detached;
             return await HandleInsertFailureAsync(exception, request, cancellationToken);
         }
 
@@ -168,9 +172,10 @@ public sealed class PessimisticDefense(PrumoDbContext dbContext, TimeProvider ti
 
     /// <summary>
     /// Rede de segurança (design.md §6.2 passo 4, XML-doc da classe): só é alcançado se o lock tiver
-    /// sido contornado por algum outro caminho de escrita. Mesmo tradutor da T4/T5
-    /// (<see cref="ReservationConflictMapper.Map"/>) e mesma releitura pós-falha de
-    /// <see cref="ExclusionDefense.HandleInsertFailureAsync"/>.
+    /// sido contornado por algum outro caminho de escrita. O chamador já deu
+    /// <c>RollbackAsync</c> na transação explícita — esta leitura não pode rodar no bloco abortado
+    /// (<c>25P02</c>). Mesmo tradutor da T4/T5 (<see cref="ReservationConflictMapper.Map"/>) e mesma
+    /// releitura pós-falha de <see cref="ExclusionDefense.HandleInsertFailureAsync"/>.
     /// </summary>
     private async Task<DefenseResult> HandleInsertFailureAsync(
         DbUpdateException exception, ReservationRequest request, CancellationToken cancellationToken)
