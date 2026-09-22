@@ -184,6 +184,9 @@ public sealed class OptimisticDefense(PrumoDbContext dbContext, TimeProvider tim
         {
             // Rede de segurança (design.md §6.3 passo 5): só alcançada se, apesar de ter vencido a CAS
             // de version, o INSERT ainda assim colidir com a EXCLUDE — mesmo tradutor da T4/T5/T6.
+            // Rollback antes da releitura: a transação já está abortada e um SELECT nela devolve 25P02.
+            await transaction.RollbackAsync(cancellationToken);
+            dbContext.Entry(reservation).State = EntityState.Detached;
             return await HandleInsertFailureAsync(exception, request, cancellationToken);
         }
 
@@ -210,9 +213,10 @@ public sealed class OptimisticDefense(PrumoDbContext dbContext, TimeProvider tim
 
     /// <summary>
     /// Rede de segurança (design.md §6.3 passo 5, XML-doc da classe): só é alcançada se, mesmo tendo
-    /// vencido a CAS de <c>version</c>, o <c>INSERT</c> colidir com a EXCLUDE. Mesmo tradutor da
-    /// T4/T5/T6 (<see cref="ReservationConflictMapper.Map"/>) e mesma releitura pós-falha de
-    /// <see cref="ExclusionDefense"/>/<see cref="PessimisticDefense"/>.
+    /// vencido a CAS de <c>version</c>, o <c>INSERT</c> colidir com a EXCLUDE. O chamador já deu
+    /// <c>RollbackAsync</c> — esta leitura não roda na transação abortada (<c>25P02</c>). Mesmo
+    /// tradutor da T4/T5/T6 (<see cref="ReservationConflictMapper.Map"/>) e mesma releitura pós-falha
+    /// de <see cref="ExclusionDefense"/>/<see cref="PessimisticDefense"/>.
     /// </summary>
     private async Task<DefenseResult> HandleInsertFailureAsync(
         DbUpdateException exception, ReservationRequest request, CancellationToken cancellationToken)
