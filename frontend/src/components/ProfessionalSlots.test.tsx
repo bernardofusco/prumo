@@ -114,7 +114,7 @@ describe('ProfessionalSlots', () => {
     await waitFor(() => {
       expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Reservar' }).disabled).toBe(true)
     })
-    expect(screen.getByText('Já reservado por outra pessoa')).toBeDefined()
+    expect(screen.getByText('Já reservado')).toBeDefined()
   })
 
   // Cobertura explícita pedida pela task (J5): um slot "past" VINDO DA API (nenhum cálculo no
