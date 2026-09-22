@@ -4,15 +4,15 @@
 
 Esta é a **segunda régua nomeada do case**, ao lado do golden set do M1 (`eval/README.md`, `eval/golden-set.json`). Mede uma coisa só: sob N tentativas simultâneas de reserva no MESMO horário do MESMO profissional, com N clientes distintos, a defesa admite EXATAMENTE uma. **Mudar N, o critério "exatamente 1 sucesso" (C1), "N−1 recusas 409/`slot_conflict`" (C2) ou "zero qualquer outro status" (C3) é ADR + decisão do dono** — nunca edição silenciosa desta tabela nem de `Prumo.Api.Agenda.Scheduling.LoadVerdict`.
 
-`n` = `LoadVerdict.N` = **20** `POST /api/reservations` simultâneos (HTTP real, via `WebApplicationFactory`) no mesmo `slotId`, com 20 `clientKey` distintos (UUIDs sintéticos, nenhum gravado neste arquivo) — repetido uma vez por defesa, cada rodada com um profissional/slot PRÓPRIOS (estado isolado, nunca reaproveitado entre defesas). `durationMs` é a parede de relógio do lote inteiro — **informativo, não é régua** (ADR-007: a tese do M2 é integridade sob corrida, não RPS).
+`n` = `LoadVerdict.N` = **20** `POST /api/reservations` simultâneos (HTTP real, via `WebApplicationFactory`) no mesmo `slotId`, com 20 `clientKey` distintos (UUIDs sintéticos, nenhum gravado neste arquivo) — repetido uma vez por defesa, cada rodada com um profissional/slot PRÓPRIOS (estado isolado, nunca reaproveitado entre defesas). `durationMs` é a parede de relógio do lote inteiro, arredondada para o segundo mais próximo (abaixo de 500 ms publica 0) — **informativo, não é régua** (ADR-007: a tese do M2 é integridade sob corrida, não RPS).
 
 ## As três defesas, medidas
 
 | defense | n | successes | conflicts | other | durationMs |
 |---|---:|---:|---:|---:|---:|
-| `exclusion` | 20 | 1 | 19 | 0 | 179 |
-| `pessimistic` | 20 | 1 | 19 | 0 | 218 |
-| `optimistic` | 20 | 1 | 19 | 0 | 194 |
+| `exclusion` | 20 | 1 | 19 | 0 | 0 |
+| `pessimistic` | 20 | 1 | 19 | 0 | 0 |
+| `optimistic` | 20 | 1 | 19 | 0 | 0 |
 
 `other` é 0 nas três linhas — nenhuma recusa saiu como `503`/`500`/`422`/`200` replay/timeout/resposta ausente. Este é exatamente o buraco que a spec.md "Contexto" nomeia ("um teste de carga que só contasse sucessos ainda passaria") — a linha `exclusion` só fecha `other = 0` porque o tradutor de conflito (T4) e a tradução do deadlock `40P01` (`project/adr/ADR-008-deadlock-da-exclusao-e-conflito-de-negocio.md`) estão no lugar: sem a ADR-008, a mesma corrida mediu `1×201 + 19×503` contra container frio.
 

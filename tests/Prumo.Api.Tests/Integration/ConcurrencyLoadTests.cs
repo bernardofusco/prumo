@@ -21,6 +21,7 @@ using Prumo.Api.Agenda.Defenses;
 using Prumo.Api.Agenda.Scheduling;
 using Prumo.Api.Data;
 using Prumo.Api.Data.Entities;
+using Prumo.Api.Tests.Agenda;
 
 using Testcontainers.PostgreSql;
 
@@ -316,51 +317,64 @@ public sealed class ConcurrencyLoadTests(PostgresIntegrationFixture fixture, ITe
     {
         var builder = new StringBuilder();
 
-        builder.AppendLine("# `eval/concurrency-ledger.md` — a régua do M2 (agendamento sob concorrência)");
-        builder.AppendLine();
-        builder.AppendLine(
+        // LF explícito. AppendLine no Windows emite CRLF e suja o arquivo versionado
+        // mesmo quando os números não mudam (.gitattributes normaliza para LF).
+        void Line(string? text = null)
+        {
+            if (text is not null)
+            {
+                builder.Append(text);
+            }
+
+            builder.Append('\n');
+        }
+
+        Line("# `eval/concurrency-ledger.md` — a régua do M2 (agendamento sob concorrência)");
+        Line();
+        Line(
             "> Gerado e atualizado por `tests/Prumo.Api.Tests/Integration/ConcurrencyLoadTests.cs` " +
             "(MET-480 T15) — os números abaixo são a saída REAL da última execução verde deste teste, " +
             "não texto escrito à mão. Rodar o teste de novo regenera este arquivo por inteiro.");
-        builder.AppendLine();
-        builder.AppendLine(
+        Line();
+        Line(
             "Esta é a **segunda régua nomeada do case**, ao lado do golden set do M1 (`eval/README.md`, " +
             "`eval/golden-set.json`). Mede uma coisa só: sob N tentativas simultâneas de reserva no " +
             "MESMO horário do MESMO profissional, com N clientes distintos, a defesa admite EXATAMENTE " +
             "uma. **Mudar N, o critério \"exatamente 1 sucesso\" (C1), \"N−1 recusas 409/`slot_conflict`\" " +
             "(C2) ou \"zero qualquer outro status\" (C3) é ADR + decisão do dono** — nunca edição " +
             "silenciosa desta tabela nem de `Prumo.Api.Agenda.Scheduling.LoadVerdict`.");
-        builder.AppendLine();
-        builder.AppendLine(
+        Line();
+        Line(
             $"`n` = `LoadVerdict.N` = **{LoadVerdict.N}** `POST /api/reservations` simultâneos (HTTP real, " +
             "via `WebApplicationFactory`) no mesmo `slotId`, com " +
             $"{LoadVerdict.N} `clientKey` distintos (UUIDs sintéticos, nenhum gravado neste arquivo) — " +
             "repetido uma vez por defesa, cada rodada com um profissional/slot PRÓPRIOS (estado isolado, " +
-            "nunca reaproveitado entre defesas). `durationMs` é a parede de relógio do lote inteiro — " +
-            "**informativo, não é régua** (ADR-007: a tese do M2 é integridade sob corrida, não RPS).");
-        builder.AppendLine();
-        builder.AppendLine("## As três defesas, medidas");
-        builder.AppendLine();
-        builder.AppendLine("| defense | n | successes | conflicts | other | durationMs |");
-        builder.AppendLine("|---|---:|---:|---:|---:|---:|");
+            "nunca reaproveitado entre defesas). `durationMs` é a parede de relógio do lote inteiro, " +
+            "arredondada para o segundo mais próximo (abaixo de 500 ms publica 0) — **informativo, não " +
+            "é régua** (ADR-007: a tese do M2 é integridade sob corrida, não RPS).");
+        Line();
+        Line("## As três defesas, medidas");
+        Line();
+        Line("| defense | n | successes | conflicts | other | durationMs |");
+        Line("|---|---:|---:|---:|---:|---:|");
 
         foreach (var row in mainRows)
         {
-            builder.AppendLine($"| `{row.Defense}` | {row.N} | {row.Successes} | {row.Conflicts} | {row.Other} | {row.DurationMs} |");
+            Line($"| `{row.Defense}` | {row.N} | {row.Successes} | {row.Conflicts} | {row.Other} | {ConcurrencyLedgerFormat.RoundDurationMs(row.DurationMs)} |");
         }
 
-        builder.AppendLine();
-        builder.AppendLine(
+        Line();
+        Line(
             "`other` é 0 nas três linhas — nenhuma recusa saiu como `503`/`500`/`422`/`200` replay/timeout/" +
             "resposta ausente. Este é exatamente o buraco que a spec.md \"Contexto\" nomeia (\"um teste de " +
             "carga que só contasse sucessos ainda passaria\") — a linha `exclusion` só fecha `other = 0` " +
             "porque o tradutor de conflito (T4) e a tradução do deadlock `40P01` " +
             "(`project/adr/ADR-008-deadlock-da-exclusao-e-conflito-de-negocio.md`) estão no lugar: sem a " +
             "ADR-008, a mesma corrida mediu `1×201 + 19×503` contra container frio.");
-        builder.AppendLine();
-        builder.AppendLine("## Ablação: a EXCLUDE removida de propósito");
-        builder.AppendLine();
-        builder.AppendLine(
+        Line();
+        Line("## Ablação: a EXCLUDE removida de propósito");
+        Line();
+        Line(
             "A issue MET-480 pede literalmente: \"repetir com a defesa de aplicação removida de propósito " +
             "— só a constraint sobrevive a código que 'esquece de checar'\". **Esta seção foi " +
             "AUTOMATIZADA por este mesmo teste** (não é a medição de um reviewer copiada à mão): num " +
@@ -369,8 +383,8 @@ public sealed class ConcurrencyLoadTests(PostgresIntegrationFixture fixture, ITe
             "editado), a constraint `EXCLUDE reservations_no_overlap` é removida por SQL cru logo após o " +
             "boot; o container inteiro é descartado ao final da execução — não há \"restaurar a " +
             "constraint\" porque nada do que ele contém sobrevive além da chamada.");
-        builder.AppendLine();
-        builder.AppendLine(
+        Line();
+        Line(
             $"Cada variante roda {AblationRounds} rodadas de N={LoadVerdict.N} tentativas concorrentes " +
             "(chamando a defesa direto, sem HTTP — a mesma técnica que `ExclusionDefenseTests`/" +
             "`PessimisticDefenseTests`/`OptimisticDefenseTests` já usam para a régua por-defesa), num " +
@@ -378,19 +392,19 @@ public sealed class ConcurrencyLoadTests(PostgresIntegrationFixture fixture, ITe
             "(não o que cada defesa autorrelatou) — é essa contagem que prova \"colapsa\" ou \"sobrevive\". " +
             "Esta tabela **não é** a régua C1-C4 (AGN-11) e não substitui a tabela acima — é evidência " +
             "adicional para a tese do case.");
-        builder.AppendLine();
-        builder.AppendLine("| variant | n | rounds | linhas persistidas por rodada | colapsa? |");
-        builder.AppendLine("|---|---:|---:|---|---|");
+        Line();
+        Line("| variant | n | rounds | linhas persistidas por rodada | colapsa? |");
+        Line("|---|---:|---:|---|---|");
 
         foreach (var result in ablationResults)
         {
             var perRoundText = string.Join(", ", result.RowsPersistedPerRound);
             var collapses = result.RowsPersistedPerRound.Any(count => count > 1) ? "sim" : "não";
-            builder.AppendLine($"| `{result.Label}` | {result.N} | {result.Rounds} | {perRoundText} | {collapses} |");
+            Line($"| `{result.Label}` | {result.N} | {result.Rounds} | {perRoundText} | {collapses} |");
         }
 
-        builder.AppendLine();
-        builder.AppendLine(
+        Line();
+        Line(
             "**A leitura:** `exclusion` colapsa sem a constraint (ela NÃO tem defesa nenhuma em código — " +
             "\"insere e deixa o banco decidir\" é a frase literal, e sem banco decidindo não sobra nada); " +
             "`pessimistic` e `optimistic` sobrevivem sozinhas (o lock de linha e a incrementação " +
