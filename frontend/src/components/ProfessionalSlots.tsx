@@ -42,7 +42,7 @@ type ReservationState =
  */
 const SLOT_STATUS_LABEL: Record<AgendaSlotItem['status'], string> = {
   available: 'Disponível',
-  booked: 'Já reservado por outra pessoa',
+  booked: 'Já reservado',
   past: 'Este horário já passou',
 }
 
